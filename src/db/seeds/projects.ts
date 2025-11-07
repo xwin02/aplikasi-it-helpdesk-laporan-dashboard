@@ -1,0 +1,252 @@
+import { db } from '@/db';
+import { projects } from '@/db/schema';
+
+async function main() {
+    const userIds = [
+        "1L2Ur2Lb2YWhS3IZJ0672LLFJdX2IOIt",
+        "3yzN7om8UKcILyCvi1jSffvOiBYihm84",
+        "MekqyzXasPHu11zjBJHWPRgja9OufLgT",
+        "S1FnKilKhFMytdzNBm1Ws2UUzzumdssL",
+        "T5sZTNyg0er3YKXOCWohmu5ew9J06txu"
+    ];
+
+    const now = new Date();
+    const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const twoMonthsAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+    const threeMonthsAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const twoWeeksFromNow = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const oneMonthFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const twoMonthsFromNow = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+
+    const sampleProjects = [
+        {
+            title: 'Server Migration to AWS',
+            description: 'Migrate all production servers from on-premise data center to AWS cloud infrastructure. This includes database servers, application servers, and backup systems. Expected completion in Q2 2024.',
+            status: 'in_progress',
+            priority: 'high',
+            assignedTo: userIds[0],
+            createdBy: userIds[2],
+            dueDate: oneMonthFromNow.toISOString(),
+            createdAt: twoMonthsAgo.toISOString(),
+            updatedAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'New CRM Implementation - Salesforce',
+            description: 'Deploy Salesforce CRM across all sales and marketing departments. Includes data migration from legacy system, user training, and custom workflow configuration.',
+            status: 'in_progress',
+            priority: 'urgent',
+            assignedTo: userIds[1],
+            createdBy: userIds[0],
+            dueDate: twoWeeksFromNow.toISOString(),
+            createdAt: threeMonthsAgo.toISOString(),
+            updatedAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'Network Infrastructure Upgrade',
+            description: 'Upgrade core network switches and routers to support 10Gbps connectivity. Replace aging hardware in main office and three branch locations.',
+            status: 'todo',
+            priority: 'high',
+            assignedTo: userIds[3],
+            createdBy: userIds[1],
+            dueDate: twoMonthsFromNow.toISOString(),
+            createdAt: oneMonthAgo.toISOString(),
+            updatedAt: oneMonthAgo.toISOString(),
+        },
+        {
+            title: 'Annual Security Audit & Compliance Review',
+            description: 'Complete annual security audit including penetration testing, vulnerability assessments, and compliance review for SOC 2 certification. Documentation and remediation plan required.',
+            status: 'in_progress',
+            priority: 'high',
+            assignedTo: userIds[2],
+            createdBy: userIds[4],
+            dueDate: oneWeekFromNow.toISOString(),
+            createdAt: new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'Mobile App Development - iOS & Android',
+            description: 'Develop native mobile applications for customer portal on both iOS and Android platforms. Features include account management, order tracking, and push notifications.',
+            status: 'in_progress',
+            priority: 'medium',
+            assignedTo: userIds[4],
+            createdBy: userIds[0],
+            dueDate: new Date(now.getTime() + 45 * 24 * 60 * 60 * 1000).toISOString(),
+            createdAt: twoMonthsAgo.toISOString(),
+            updatedAt: now.toISOString(),
+        },
+        {
+            title: 'Employee Onboarding Portal',
+            description: 'Create internal web portal to streamline new employee onboarding process. Includes document management, task tracking, and integration with HR systems.',
+            status: 'review',
+            priority: 'medium',
+            assignedTo: userIds[1],
+            createdBy: userIds[3],
+            dueDate: oneWeekFromNow.toISOString(),
+            createdAt: new Date(now.getTime() - 50 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'Data Center Consolidation Project',
+            description: 'Consolidate operations from two regional data centers into primary facility. Includes hardware relocation, network reconfiguration, and minimal downtime migration strategy.',
+            status: 'backlog',
+            priority: 'medium',
+            assignedTo: null,
+            createdBy: userIds[2],
+            dueDate: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+            createdAt: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'Corporate Website Redesign',
+            description: 'Complete overhaul of corporate website with modern design, improved UX, and mobile responsiveness. Includes SEO optimization and CMS migration to WordPress.',
+            status: 'in_progress',
+            priority: 'medium',
+            assignedTo: userIds[0],
+            createdBy: userIds[1],
+            dueDate: oneMonthFromNow.toISOString(),
+            createdAt: new Date(now.getTime() - 35 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'Backup System Upgrade - Veeam',
+            description: 'Upgrade backup infrastructure to Veeam Backup & Replication v12. Implement 3-2-1 backup strategy with cloud tier for disaster recovery.',
+            status: 'todo',
+            priority: 'high',
+            assignedTo: userIds[3],
+            createdBy: userIds[4],
+            dueDate: twoWeeksFromNow.toISOString(),
+            createdAt: new Date(now.getTime() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'VPN Gateway Replacement',
+            description: 'Replace aging VPN concentrators with new Cisco ASA firewalls. Upgrade remote access capabilities and implement multi-factor authentication for all VPN users.',
+            status: 'todo',
+            priority: 'high',
+            assignedTo: userIds[2],
+            createdBy: userIds[0],
+            dueDate: oneMonthFromNow.toISOString(),
+            createdAt: new Date(now.getTime() - 25 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'Database Performance Optimization',
+            description: 'Optimize SQL Server database performance through index tuning, query optimization, and hardware upgrades. Address slow-running queries affecting production applications.',
+            status: 'in_progress',
+            priority: 'urgent',
+            assignedTo: userIds[4],
+            createdBy: userIds[2],
+            dueDate: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+            createdAt: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: now.toISOString(),
+        },
+        {
+            title: 'Cloud Migration - Phase 1 (Non-Critical Systems)',
+            description: 'First phase of cloud migration strategy focusing on non-critical systems and development environments. Move test servers and staging environments to Azure cloud.',
+            status: 'done',
+            priority: 'medium',
+            assignedTo: userIds[1],
+            createdBy: userIds[3],
+            dueDate: new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+            createdAt: threeMonthsAgo.toISOString(),
+            updatedAt: new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'Password Management System Rollout - 1Password',
+            description: 'Deploy 1Password Business across organization. Includes license procurement, user onboarding, and security policy enforcement for shared credentials.',
+            status: 'review',
+            priority: 'medium',
+            assignedTo: userIds[0],
+            createdBy: userIds[4],
+            dueDate: oneWeekFromNow.toISOString(),
+            createdAt: new Date(now.getTime() - 40 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'IT Asset Management Tool Implementation',
+            description: 'Implement Snipe-IT for comprehensive IT asset tracking and management. Includes hardware inventory, software license tracking, and depreciation calculations.',
+            status: 'todo',
+            priority: 'low',
+            assignedTo: null,
+            createdBy: userIds[1],
+            dueDate: twoMonthsFromNow.toISOString(),
+            createdAt: new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'Video Conferencing System Upgrade - Zoom Rooms',
+            description: 'Upgrade conference room AV systems and deploy Zoom Rooms in all meeting spaces. Includes touchscreen controllers, cameras, and integrated scheduling.',
+            status: 'backlog',
+            priority: 'low',
+            assignedTo: null,
+            createdBy: userIds[2],
+            dueDate: new Date(now.getTime() + 75 * 24 * 60 * 60 * 1000).toISOString(),
+            createdAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'Disaster Recovery Plan Update',
+            description: 'Review and update comprehensive disaster recovery plan. Conduct DR testing exercises and document recovery procedures for all critical systems.',
+            status: 'todo',
+            priority: 'high',
+            assignedTo: userIds[3],
+            createdBy: userIds[0],
+            dueDate: oneMonthFromNow.toISOString(),
+            createdAt: new Date(now.getTime() - 18 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(now.getTime() - 12 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'Helpdesk Ticketing System Enhancement',
+            description: 'Upgrade existing ticketing system with automation workflows, self-service portal improvements, and integration with monitoring tools for proactive ticket creation.',
+            status: 'review',
+            priority: 'medium',
+            assignedTo: userIds[4],
+            createdBy: userIds[1],
+            dueDate: twoWeeksFromNow.toISOString(),
+            createdAt: new Date(now.getTime() - 55 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'WiFi Network Expansion - Building C',
+            description: 'Expand wireless network coverage in Building C with new access points and controllers. Implement latest WiFi 6 standard for improved performance and capacity.',
+            status: 'done',
+            priority: 'low',
+            assignedTo: userIds[2],
+            createdBy: userIds[3],
+            dueDate: new Date(now.getTime() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+            createdAt: new Date(now.getTime() - 70 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(now.getTime() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'Email Server Migration to Microsoft 365',
+            description: 'Migrate on-premise Exchange server to Microsoft 365 cloud email. Includes mailbox migration, DNS configuration, and user training on new features.',
+            status: 'backlog',
+            priority: 'medium',
+            assignedTo: null,
+            createdBy: userIds[4],
+            dueDate: new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+            createdAt: new Date(now.getTime() - 12 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(now.getTime() - 12 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        {
+            title: 'IT Security Awareness Training Program',
+            description: 'Develop and launch comprehensive security awareness training for all employees. Covers phishing prevention, password security, and data protection best practices.',
+            status: 'backlog',
+            priority: 'medium',
+            assignedTo: null,
+            createdBy: userIds[0],
+            dueDate: new Date(now.getTime() + 50 * 24 * 60 * 60 * 1000).toISOString(),
+            createdAt: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+            updatedAt: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+        }
+    ];
+
+    await db.insert(projects).values(sampleProjects);
+    
+    console.log('✅ Projects seeder completed successfully');
+}
+
+main().catch((error) => {
+    console.error('❌ Seeder failed:', error);
+});
