@@ -216,9 +216,42 @@ export default function KnowledgeBasePage() {
 
   const parseAttachments = (attachmentsJson: string | null): FileAttachment[] => {
     if (!attachmentsJson) return [];
+    
+    // Skip empty strings or whitespace
+    if (typeof attachmentsJson === 'string' && attachmentsJson.trim() === '') return [];
+    
     try {
-      return JSON.parse(attachmentsJson);
-    } catch {
+      // If it's already an array (shouldn't happen but just in case)
+      if (Array.isArray(attachmentsJson)) {
+        return attachmentsJson;
+      }
+      
+      // If it's a string, parse it
+      if (typeof attachmentsJson === 'string') {
+        // First, try to parse as JSON
+        const parsed = JSON.parse(attachmentsJson);
+        
+        // Ensure it's an array
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+        
+        // If it's a single object, wrap it in an array
+        if (typeof parsed === 'object' && parsed !== null) {
+          return [parsed];
+        }
+      }
+      
+      // If we get here and attachmentsJson is an object, return it wrapped
+      if (typeof attachmentsJson === 'object' && attachmentsJson !== null) {
+        return Array.isArray(attachmentsJson) ? attachmentsJson : [attachmentsJson];
+      }
+      
+      return [];
+    } catch (error) {
+      console.error('Error parsing attachments:', error);
+      console.error('Raw value type:', typeof attachmentsJson);
+      console.error('Raw value:', attachmentsJson);
       return [];
     }
   };
@@ -228,6 +261,11 @@ export default function KnowledgeBasePage() {
     setIsSubmitting(true);
 
     try {
+      console.log('Sending data:', {
+        ...formData,
+        attachments: uploadedFiles.length > 0 ? uploadedFiles.length + ' files' : null,
+      });
+
       const response = await fetch("/api/knowledge-base", {
         method: "POST",
         headers: {
@@ -239,10 +277,28 @@ export default function KnowledgeBasePage() {
         }),
       });
 
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
+
+      // Get response text first to check what we're receiving
+      const responseText = await response.text();
+      console.log('Response text (first 500 chars):', responseText.substring(0, 500));
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Gagal membuat artikel");
+        // Try to parse as JSON, fallback to text error
+        let errorMessage = "Gagal membuat artikel";
+        try {
+          const errorData = JSON.parse(responseText);
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          errorMessage = responseText.substring(0, 200);
+        }
+        throw new Error(errorMessage);
       }
+
+      // Parse successful response
+      const data = JSON.parse(responseText);
+      console.log('Success! Created article:', data);
 
       toast.success("Artikel berhasil dibuat!");
       setIsCreateDialogOpen(false);
@@ -256,6 +312,7 @@ export default function KnowledgeBasePage() {
       setUploadedFiles([]);
       fetchArticles();
     } catch (err) {
+      console.error('Error creating article:', err);
       toast.error(err instanceof Error ? err.message : "Terjadi kesalahan");
     } finally {
       setIsSubmitting(false);
@@ -812,7 +869,7 @@ export default function KnowledgeBasePage() {
                   dangerouslySetInnerHTML={{ __html: selectedArticle.content }}
                 />
 
-                {parseAttachments(selectedArticle.attachments).length > 0 && (
+                {selectedArticle.attachments && parseAttachments(selectedArticle.attachments).length > 0 ? (
                   <div className="border-t pt-4">
                     <h3 className="font-semibold mb-3 flex items-center gap-2">
                       <Paperclip className="h-4 w-4" />
@@ -834,7 +891,7 @@ export default function KnowledgeBasePage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => downloadFile(file)}
-                            className="gap-2"
+                            className="gap-2 hover:bg-emerald-100 hover:text-emerald-700"
                           >
                             <Download className="h-4 w-4" />
                             Download
@@ -843,6 +900,12 @@ export default function KnowledgeBasePage() {
                       ))}
                     </div>
                   </div>
+                ) : (
+                  process.env.NODE_ENV === 'development' && (
+                    <div className="border-t pt-4 text-sm text-gray-500">
+                      <em>Tidak ada file lampiran</em>
+                    </div>
+                  )
                 )}
 
                 <div className="border-t pt-4 text-sm text-muted-foreground">

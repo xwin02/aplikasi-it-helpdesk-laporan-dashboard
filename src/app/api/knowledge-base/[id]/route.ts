@@ -5,6 +5,17 @@ import { eq } from 'drizzle-orm';
 
 const VALID_CATEGORIES = ['hardware', 'software', 'network', 'access', 'other'] as const;
 
+// Helper function to serialize dates in articles
+function serializeArticle(article: any) {
+  if (!article) return article;
+  
+  return {
+    ...article,
+    createdAt: article.createdAt instanceof Date ? article.createdAt.toISOString() : article.createdAt,
+    updatedAt: article.updatedAt instanceof Date ? article.updatedAt.toISOString() : article.updatedAt,
+  };
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -32,7 +43,7 @@ export async function GET(
       );
     }
 
-    return NextResponse.json(article[0], { status: 200 });
+    return NextResponse.json(serializeArticle(article[0]), { status: 200 });
   } catch (error) {
     console.error('GET error:', error);
     return NextResponse.json(
@@ -74,9 +85,7 @@ export async function PATCH(
     const body = await request.json();
     const { title, content, category, tags, author, attachments } = body;
 
-    const updates: Record<string, any> = {
-      updatedAt: new Date().toISOString(),
-    };
+    const updates: Record<string, any> = {};
 
     if (title !== undefined) {
       const trimmedTitle = title.trim();
@@ -140,8 +149,9 @@ export async function PATCH(
       } else if (typeof attachments === 'string') {
         // Validate JSON string
         try {
-          JSON.parse(attachments);
-          updates.attachments = attachments;
+          const parsed = JSON.parse(attachments);
+          // Only store if it's a non-empty array
+          updates.attachments = (Array.isArray(parsed) && parsed.length > 0) ? attachments : null;
         } catch (e) {
           return NextResponse.json(
             { error: 'Attachments must be valid JSON string', code: 'INVALID_ATTACHMENTS_JSON' },
@@ -149,7 +159,8 @@ export async function PATCH(
           );
         }
       } else if (Array.isArray(attachments)) {
-        updates.attachments = JSON.stringify(attachments);
+        // Convert array to JSON string only if not empty
+        updates.attachments = attachments.length > 0 ? JSON.stringify(attachments) : null;
       } else {
         return NextResponse.json(
           { error: 'Attachments must be a JSON string or array', code: 'INVALID_ATTACHMENTS' },
@@ -158,13 +169,19 @@ export async function PATCH(
       }
     }
 
-    const updated = await db
+    await db
       .update(knowledgeBase)
       .set(updates)
-      .where(eq(knowledgeBase.id, articleId))
-      .returning();
+      .where(eq(knowledgeBase.id, articleId));
 
-    return NextResponse.json(updated[0], { status: 200 });
+    // MySQL doesn't support .returning(), so we need to fetch the updated record
+    const updated = await db
+      .select()
+      .from(knowledgeBase)
+      .where(eq(knowledgeBase.id, articleId))
+      .limit(1);
+
+    return NextResponse.json(serializeArticle(updated[0]), { status: 200 });
   } catch (error) {
     console.error('PATCH error:', error);
     return NextResponse.json(
@@ -203,15 +220,17 @@ export async function DELETE(
       );
     }
 
-    const deleted = await db
+    // Fetch the record first before deleting
+    const articleToDelete = existingArticle[0];
+
+    await db
       .delete(knowledgeBase)
-      .where(eq(knowledgeBase.id, articleId))
-      .returning();
+      .where(eq(knowledgeBase.id, articleId));
 
     return NextResponse.json(
       {
         message: 'Article deleted successfully',
-        article: deleted[0],
+        article: serializeArticle(articleToDelete),
       },
       { status: 200 }
     );

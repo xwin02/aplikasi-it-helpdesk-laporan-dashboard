@@ -60,6 +60,9 @@ export function RichTextEditor({ content, onChange, placeholder = "Mulai menulis
       Image.configure({
         inline: true,
         allowBase64: true,
+        HTMLAttributes: {
+          class: 'max-w-full h-auto rounded-lg',
+        },
       }),
       Link.configure({
         openOnClick: false,
@@ -76,11 +79,99 @@ export function RichTextEditor({ content, onChange, placeholder = "Mulai menulis
     ],
     content,
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
+      const html = editor.getHTML();
+      console.log('Editor content updated, has images:', html.includes('<img'));
+      onChange(html);
     },
     editorProps: {
       attributes: {
         class: "prose prose-sm max-w-none focus:outline-none min-h-[300px] px-4 py-3",
+      },
+      // Handle paste events to convert blob URLs to base64
+      handlePaste: (view, event) => {
+        const items = event.clipboardData?.items;
+        if (!items) return false;
+
+        // Check if clipboard contains image
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type.indexOf('image') !== -1) {
+            event.preventDefault();
+            
+            const file = items[i].getAsFile();
+            if (!file) continue;
+
+            // Check size
+            if (file.size > 2 * 1024 * 1024) {
+              alert("Gambar terlalu besar! Maksimal 2MB untuk paste gambar. Gunakan tombol Upload untuk gambar lebih besar.");
+              return true;
+            }
+
+            // Convert to base64
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const base64 = e.target?.result as string;
+              if (base64) {
+                console.log('Pasted image converted to base64:', {
+                  size: file.size,
+                  type: file.type,
+                  base64Length: base64.length
+                });
+                
+                // Insert as base64
+                editor.chain().focus().setImage({ src: base64 }).run();
+              }
+            };
+            reader.readAsDataURL(file);
+            
+            return true; // Prevent default paste
+          }
+        }
+
+        return false; // Let other content be pasted normally
+      },
+      // Handle drop events for drag & drop images
+      handleDrop: (view, event, slice, moved) => {
+        if (!event.dataTransfer) return false;
+
+        const files = event.dataTransfer.files;
+        if (files.length === 0) return false;
+
+        // Check if any file is an image
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          if (file.type.indexOf('image') !== -1) {
+            event.preventDefault();
+
+            // Check size
+            if (file.size > 2 * 1024 * 1024) {
+              alert("Gambar terlalu besar! Maksimal 2MB untuk drag & drop gambar.");
+              return true;
+            }
+
+            // Convert to base64
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const base64 = e.target?.result as string;
+              if (base64) {
+                console.log('Dropped image converted to base64:', {
+                  size: file.size,
+                  type: file.type,
+                  base64Length: base64.length
+                });
+                
+                // Insert at cursor position or end
+                const { state } = view;
+                const pos = state.selection.from;
+                editor.chain().focus().setImage({ src: base64 }).run();
+              }
+            };
+            reader.readAsDataURL(file);
+            
+            return true; // Prevent default drop
+          }
+        }
+
+        return false; // Let other content be dropped normally
       },
     },
   });
@@ -100,23 +191,43 @@ export function RichTextEditor({ content, onChange, placeholder = "Mulai menulis
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && file.type.startsWith("image/")) {
+      // Check file size (max 2MB for inline images)
+      if (file.size > 2 * 1024 * 1024) {
+        alert("Gambar terlalu besar! Maksimal 2MB untuk gambar inline. Gunakan File Lampiran untuk gambar lebih besar.");
+        return;
+      }
+
       setUploadedFile(file);
       
-      // Create preview
+      // Create base64 preview
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImagePreview(reader.result as string);
+        const base64String = reader.result as string;
+        setImagePreview(base64String);
+        console.log('Image converted to base64:', {
+          fileName: file.name,
+          fileSize: file.size,
+          base64Length: base64String.length,
+          preview: base64String.substring(0, 50) + '...'
+        });
+      };
+      reader.onerror = () => {
+        alert("Gagal membaca file gambar");
       };
       reader.readAsDataURL(file);
+    } else {
+      alert("File bukan gambar! Pilih file gambar (JPG, PNG, GIF, dll)");
     }
   };
 
   const insertUploadedImage = () => {
     if (imagePreview) {
+      console.log('Inserting base64 image into editor...');
       editor.chain().focus().setImage({ src: imagePreview }).run();
       setUploadedFile(null);
       setImagePreview("");
       setIsImageDialogOpen(false);
+      console.log('Image inserted successfully');
     }
   };
 
@@ -317,6 +428,14 @@ export function RichTextEditor({ content, onChange, placeholder = "Mulai menulis
                   <div className="space-y-2">
                     <Label htmlFor="image-file">Pilih Gambar</Label>
                     <div className="flex flex-col gap-4">
+                      <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-sm">
+                        <p className="font-medium text-blue-900 dark:text-blue-100 mb-1">💡 Tips:</p>
+                        <ul className="text-blue-700 dark:text-blue-300 space-y-1 text-xs">
+                          <li>• Maksimal 2MB per gambar</li>
+                          <li>• Gambar akan disimpan dalam artikel</li>
+                          <li>• Anda juga bisa paste (Ctrl+V) atau drag & drop gambar langsung ke editor</li>
+                        </ul>
+                      </div>
                       <div className="flex items-center gap-2">
                         <Input
                           id="image-file"
@@ -334,6 +453,11 @@ export function RichTextEditor({ content, onChange, placeholder = "Mulai menulis
                             alt="Preview" 
                             className="max-w-full h-auto max-h-[200px] rounded-md mx-auto"
                           />
+                          {uploadedFile && (
+                            <p className="text-xs text-muted-foreground mt-2 text-center">
+                              {uploadedFile.name} ({(uploadedFile.size / 1024).toFixed(2)} KB)
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>

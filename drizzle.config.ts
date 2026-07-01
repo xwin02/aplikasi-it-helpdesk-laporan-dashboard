@@ -5,10 +5,13 @@ import type { Config } from 'drizzle-kit';
 const dbConfig: Config = defineConfig({
   schema: './src/db/schema.ts',
   out: './drizzle',
-  dialect: 'turso',
+  dialect: 'mysql',
   dbCredentials: {
-    url: process.env.TURSO_CONNECTION_URL!,
-    authToken: process.env.TURSO_AUTH_TOKEN!,
+    host: process.env.DB_HOST!,
+    port: parseInt(process.env.DB_PORT || '3306'),
+    user: process.env.DB_USER!,
+    ...(process.env.DB_PASSWORD && { password: process.env.DB_PASSWORD }),
+    database: process.env.DB_NAME!,
   },
 });
 

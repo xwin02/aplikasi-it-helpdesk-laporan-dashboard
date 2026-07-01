@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { tickets } from '@/db/schema';
-import { eq } from 'drizzle-orm';
-import { headers } from 'next/headers';
-import { auth } from '@/lib/auth';
+import { eq, sql } from 'drizzle-orm';
+import { cookies } from 'next/headers';
+import { verifySession } from '@/lib/session';
 
 const VALID_STATUSES = ['open', 'in_progress', 'resolved', 'closed'] as const;
 const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
@@ -23,40 +23,41 @@ interface UpdateTicketBody {
   assignedTo?: string | null;
   department?: string;
   requesterName?: string;
+  resolution?: string | null;
 }
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Get session from bearer token
-    const session = await auth.api.getSession({ headers: await headers() });
+    // Get session from cookies and verify
+    const cookieStore = await cookies();
+    const sessionCookie = cookieStore.get('session')?.value;
 
-    if (!session?.user) {
+    if (!sessionCookie) {
       return NextResponse.json(
-        { 
-          error: 'Unauthorized - Authentication required',
-          code: 'UNAUTHORIZED'
-        },
+        { error: 'Unauthorized', code: 'UNAUTHORIZED' },
         { status: 401 }
       );
     }
 
-    const { user } = session;
-    const userRole = user.role || 'user';
+    const user = await verifySession(sessionCookie);
 
-    // Users cannot edit tickets at all
-    if (userRole === 'user') {
+    if (!user) {
       return NextResponse.json(
-        { 
-          error: 'Forbidden - Users cannot edit tickets',
-          code: 'FORBIDDEN'
-        },
-        { status: 403 }
+        { error: 'Unauthorized', code: 'UNAUTHORIZED' },
+        { status: 401 }
       );
     }
 
+    const userId = user.id;
+    const userRole = user.role;
+    const userEmail = user.email;
+    
+    console.log('🔐 PATCH Ticket - User:', userEmail, 'Role:', userRole);
+
+    const params = await context.params; // Await params for Next.js 15
     const { id } = params;
 
     if (!id || isNaN(parseInt(id))) {
@@ -84,6 +85,19 @@ export async function PATCH(
           code: 'TICKET_NOT_FOUND'
         },
         { status: 404 }
+      );
+    }
+
+    // Check ownership: 
+    // - Superadmin and Teknisi can edit all tickets
+    // - Regular users can only edit their own tickets
+    if (userRole !== 'superadmin' && userRole !== 'teknisi' && existingTicket[0].userId !== userId) {
+      return NextResponse.json(
+        {
+          error: 'You do not have permission to edit this ticket',
+          code: 'FORBIDDEN'
+        },
+        { status: 403 }
       );
     }
 
@@ -131,11 +145,13 @@ export async function PATCH(
       }
       updates.status = trimmedStatus;
 
+      // Set resolvedAt timestamp when marking as resolved or closed
       if (
         (trimmedStatus === 'resolved' || trimmedStatus === 'closed') &&
         !existingTicket[0].resolvedAt
       ) {
-        updates.resolvedAt = new Date().toISOString();
+        console.log('Setting resolvedAt for ticket', ticketId);
+        updates.resolvedAt = sql`NOW()`; // Use MySQL NOW() function
       }
     }
 
@@ -199,13 +215,23 @@ export async function PATCH(
       updates.requesterName = trimmedRequesterName;
     }
 
-    updates.updatedAt = new Date().toISOString();
+    if (body.resolution !== undefined) {
+      updates.resolution = body.resolution ? body.resolution.trim() : null;
+    }
 
-    const updatedTicket = await db
+    // Don't manually set updatedAt - schema has .onUpdateNow()
+
+    await db
       .update(tickets)
       .set(updates)
+      .where(eq(tickets.id, ticketId));
+
+    // MySQL doesn't support .returning(), so we fetch the updated ticket
+    const updatedTicket = await db
+      .select()
+      .from(tickets)
       .where(eq(tickets.id, ticketId))
-      .returning();
+      .limit(1);
 
     if (updatedTicket.length === 0) {
       return NextResponse.json(
@@ -231,36 +257,36 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Get session from bearer token
-    const session = await auth.api.getSession({ headers: await headers() });
+    // Get session from cookies and verify
+    const cookieStore = await cookies();
+    const sessionCookie = cookieStore.get('session')?.value;
 
-    if (!session?.user) {
+    if (!sessionCookie) {
       return NextResponse.json(
-        { 
-          error: 'Unauthorized - Authentication required',
-          code: 'UNAUTHORIZED'
-        },
+        { error: 'Unauthorized', code: 'UNAUTHORIZED' },
         { status: 401 }
       );
     }
 
-    const { user } = session;
-    const userRole = user.role || 'user';
+    const user = await verifySession(sessionCookie);
 
-    // Users cannot delete tickets at all
-    if (userRole === 'user') {
+    if (!user) {
       return NextResponse.json(
-        { 
-          error: 'Forbidden - Users cannot delete tickets',
-          code: 'FORBIDDEN'
-        },
-        { status: 403 }
+        { error: 'Unauthorized', code: 'UNAUTHORIZED' },
+        { status: 401 }
       );
     }
 
+    const userId = user.id;
+    const userRole = user.role;
+    const userEmail = user.email;
+    
+    console.log('🔐 DELETE Ticket - User:', userEmail, 'Role:', userRole);
+
+    const params = await context.params; // Await params for Next.js 15
     const { id } = params;
 
     if (!id || isNaN(parseInt(id))) {
@@ -291,25 +317,27 @@ export async function DELETE(
       );
     }
 
-    const deletedTicket = await db
-      .delete(tickets)
-      .where(eq(tickets.id, ticketId))
-      .returning();
-
-    if (deletedTicket.length === 0) {
+    // Check ownership:
+    // - Superadmin and Teknisi can delete all tickets
+    // - Regular users can only delete their own tickets
+    if (userRole !== 'superadmin' && userRole !== 'teknisi' && existingTicket[0].userId !== userId) {
       return NextResponse.json(
-        { 
-          error: 'Failed to delete ticket',
-          code: 'DELETE_FAILED'
+        {
+          error: 'You do not have permission to delete this ticket',
+          code: 'FORBIDDEN'
         },
-        { status: 500 }
+        { status: 403 }
       );
     }
+
+    await db
+      .delete(tickets)
+      .where(eq(tickets.id, ticketId));
 
     return NextResponse.json(
       {
         message: 'Ticket deleted successfully',
-        ticket: deletedTicket[0]
+        ticket: existingTicket[0]
       },
       { status: 200 }
     );

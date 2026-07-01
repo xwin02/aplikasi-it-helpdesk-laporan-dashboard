@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,8 +15,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, Search, Filter, Trash2, Edit, Eye, AlertCircle, Ticket, Sparkles } from "lucide-react";
 import { toast } from "sonner";
-import { useSession } from "@/lib/auth-client";
-import { useRouter } from "next/navigation";
+
+interface SessionUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+}
 
 interface Ticket {
   id: number;
@@ -27,6 +33,8 @@ interface Ticket {
   requesterName: string;
   department: string;
   assignedTo: string | null;
+  resolution: string | null;
+  userId: string;
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
@@ -63,8 +71,13 @@ const DEPARTMENTS = [
 ] as const;
 
 export default function TicketsPage() {
-  const { data: session, isPending: sessionLoading } = useSession();
+  const searchParams = useSearchParams();
   const router = useRouter();
+  
+  // Session state
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
+  
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [filteredTickets, setFilteredTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,8 +89,10 @@ export default function TicketsPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isResolveDialogOpen, setIsResolveDialogOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [resolution, setResolution] = useState("");
   const [users, setUsers] = useState<Array<{ id: string; name: string; email: string; role: string }>>([]);
 
   const [formData, setFormData] = useState({
@@ -99,26 +114,52 @@ export default function TicketsPage() {
     assignedTo: "unassigned",
   });
 
+  // Handle query parameters from reports page
+  useEffect(() => {
+    const filter = searchParams.get('filter');
+    if (filter === 'active') {
+      // Show open tickets when clicked from reports
+      setStatusFilter('open');
+      toast.info('Menampilkan tiket aktif (Open & In Progress)');
+    }
+  }, [searchParams]);
+
   // Check authentication
   useEffect(() => {
-    if (!sessionLoading && !session?.user) {
-      router.push("/login?redirect=/tickets");
-    }
-  }, [session, sessionLoading, router]);
+    checkAuth();
+  }, []);
 
+  const checkAuth = async () => {
+    try {
+      const response = await fetch("/api/auth/session");
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentUser(data.user);
+        // Fetch data after successful auth
+        await Promise.all([fetchTickets(), fetchUsers()]);
+      } else {
+        // Not authenticated, redirect to login
+        router.push("/login?redirect=/tickets");
+      }
+    } catch (error) {
+      console.error("Auth check failed:", error);
+      router.push("/login?redirect=/tickets");
+    } finally {
+      setSessionLoading(false);
+    }
+  };
+  
   const fetchTickets = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const token = localStorage.getItem("bearer_token");
       const response = await fetch("/api/tickets?limit=100", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        credentials: 'include',
       });
 
       if (response.status === 401) {
+        // Unauthorized, redirect to login
         router.push("/login?redirect=/tickets");
         return;
       }
@@ -137,37 +178,25 @@ export default function TicketsPage() {
     }
   };
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (): Promise<Array<{ id: string; name: string; email: string; role: string }>> => {
     try {
-      const token = localStorage.getItem("bearer_token");
-      const response = await fetch("/api/users", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
+      const response = await fetch("/api/users", { credentials: 'include' });
       if (response.ok) {
         const data = await response.json();
-        if (Array.isArray(data)) {
-          setUsers(data);
-        } else if (data && Array.isArray(data.users)) {
-          setUsers(data.users);
-        } else {
-          console.error("Users API returned unexpected format:", data);
-          setUsers([]);
-        }
-      } else {
-        setUsers([]);
+        const list: Array<{ id: string; name: string; email: string; role: string }> =
+          Array.isArray(data) ? data : (data.users || []);
+        setUsers(list);
+        return list;
       }
     } catch (err) {
       console.error("Failed to fetch users:", err);
-      setUsers([]);
     }
+    setUsers([]);
+    return [];
   };
 
   useEffect(() => {
-    fetchTickets();
-    fetchUsers();
+    // Only call checkAuth once on mount
   }, []);
 
   useEffect(() => {
@@ -206,17 +235,17 @@ export default function TicketsPage() {
     setIsSubmitting(true);
 
     try {
-      const token = localStorage.getItem("bearer_token");
       const response = await fetch("/api/tickets", {
         method: "POST",
+        credentials: 'include',
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(formData),
       });
 
       if (response.status === 401) {
+        toast.error("Sesi Anda telah berakhir. Silakan login kembali.");
         router.push("/login?redirect=/tickets");
         return;
       }
@@ -251,25 +280,35 @@ export default function TicketsPage() {
     setIsSubmitting(true);
 
     try {
-      const token = localStorage.getItem("bearer_token");
+      // Build update payload
+      const updatePayload: any = {
+        title: editFormData.title,
+        description: editFormData.description,
+        priority: editFormData.priority,
+        category: editFormData.category,
+        requesterName: editFormData.requesterName,
+        department: editFormData.department,
+      };
+
+      // Superadmin and Teknisi can update assignedTo
+      if (currentUser?.role === 'superadmin' || currentUser?.role === 'teknisi') {
+        updatePayload.assignedTo = editFormData.assignedTo === "unassigned" ? null : editFormData.assignedTo;
+        console.log('📤 Sending assignedTo:', updatePayload.assignedTo);
+      }
+
+      console.log('📦 Update payload:', updatePayload);
+
       const response = await fetch(`/api/tickets/${selectedTicket.id}`, {
         method: "PATCH",
+        credentials: 'include',
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          title: editFormData.title,
-          description: editFormData.description,
-          priority: editFormData.priority,
-          category: editFormData.category,
-          requesterName: editFormData.requesterName,
-          department: editFormData.department,
-          assignedTo: editFormData.assignedTo === "unassigned" ? null : editFormData.assignedTo,
-        }),
+        body: JSON.stringify(updatePayload),
       });
 
       if (response.status === 401) {
+        toast.error("Sesi Anda telah berakhir. Silakan login kembali.");
         router.push("/login?redirect=/tickets");
         return;
       }
@@ -284,9 +323,17 @@ export default function TicketsPage() {
         throw new Error(errorData.error || "Gagal mengupdate tiket");
       }
 
+      const updatedTicket = await response.json();
+      console.log('✅ Ticket updated, new data:', updatedTicket);
+
       toast.success("Tiket berhasil diupdate!");
       setIsEditDialogOpen(false);
-      fetchTickets();
+      
+      // Update selectedTicket with fresh data
+      setSelectedTicket(updatedTicket);
+      
+      // Refresh tickets list
+      await fetchTickets();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Terjadi kesalahan");
     } finally {
@@ -295,18 +342,30 @@ export default function TicketsPage() {
   };
 
   const handleUpdateStatus = async (ticketId: number, newStatus: string) => {
+    // If changing to resolved, open resolution dialog
+    if (newStatus === 'resolved') {
+      const ticket = tickets.find(t => t.id === ticketId);
+      if (ticket) {
+        setSelectedTicket(ticket);
+        setResolution(ticket.resolution || ""); // Pre-fill if already has resolution
+        setIsResolveDialogOpen(true);
+      }
+      return;
+    }
+
+    // For other status changes, update directly
     try {
-      const token = localStorage.getItem("bearer_token");
       const response = await fetch(`/api/tickets/${ticketId}`, {
         method: "PATCH",
+        credentials: 'include',
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ status: newStatus }),
       });
 
       if (response.status === 401) {
+        toast.error("Sesi Anda telah berakhir. Silakan login kembali.");
         router.push("/login?redirect=/tickets");
         return;
       }
@@ -331,21 +390,59 @@ export default function TicketsPage() {
     }
   };
 
+  const handleResolveTicket = async () => {
+    if (!selectedTicket) return;
+
+    // Validation: resolution is required when resolving
+    if (!resolution.trim()) {
+      toast.error("Cara penyelesaian harus diisi untuk pembelajaran!");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch(`/api/tickets/${selectedTicket.id}`, {
+        method: "PATCH",
+        credentials: 'include',
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ 
+          status: 'resolved',
+          resolution: resolution.trim()
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Gagal menyelesaikan tiket");
+      }
+
+      toast.success("Tiket berhasil diselesaikan! Cara penyelesaian disimpan untuk pembelajaran.");
+      setIsResolveDialogOpen(false);
+      setIsViewDialogOpen(false);
+      setResolution("");
+      fetchTickets();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Terjadi kesalahan");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleDeleteTicket = async (ticketId: number) => {
     if (!confirm("Apakah Anda yakin ingin menghapus tiket ini?")) {
       return;
     }
 
     try {
-      const token = localStorage.getItem("bearer_token");
       const response = await fetch(`/api/tickets/${ticketId}`, {
         method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        credentials: 'include',
       });
 
       if (response.status === 401) {
+        toast.error("Sesi Anda telah berakhir. Silakan login kembali.");
         router.push("/login?redirect=/tickets");
         return;
       }
@@ -367,8 +464,16 @@ export default function TicketsPage() {
     }
   };
 
-  const openEditDialog = (ticket: Ticket) => {
+  const openEditDialog = async (ticket: Ticket) => {
     setSelectedTicket(ticket);
+    setIsEditDialogOpen(true);
+
+    // Always fetch fresh users so dropdown is guaranteed to have data
+    let currentUsers = users;
+    if (currentUsers.length === 0) {
+      currentUsers = await fetchUsers();
+    }
+
     setEditFormData({
       title: ticket.title,
       description: ticket.description,
@@ -378,7 +483,6 @@ export default function TicketsPage() {
       department: ticket.department,
       assignedTo: ticket.assignedTo || "unassigned",
     });
-    setIsEditDialogOpen(true);
   };
 
   const formatDate = (dateString: string) => {
@@ -392,10 +496,48 @@ export default function TicketsPage() {
     });
   };
 
-  // Check if user is admin or teknisi
-  const isAdminOrTeknisi = session?.user?.role === "admin" || session?.user?.role === "teknisi";
+  // Check if user is admin or can edit/delete ticket
+  const canEditTicket = (ticket: Ticket | null) => {
+    if (!currentUser || !ticket) return false;
+    // Superadmin and Teknisi can edit all tickets
+    if (currentUser.role === 'superadmin' || currentUser.role === 'teknisi') return true;
+    // Regular users can only edit their own tickets
+    return ticket.userId === currentUser.id;
+  };
 
-  if (sessionLoading || loading) {
+  // Check if user is superadmin
+  const isSuperAdmin = currentUser?.role === 'superadmin';
+
+  // Helper function to get user name from ID
+  const getUserNameById = (userId: string | null): string => {
+    if (!userId) return "Belum ditugaskan";
+    const user = users.find(u => u.id === userId);
+    return user ? `${user.name} (${user.email})` : userId; // Fallback to ID if not found
+  };
+
+  // Show loading while checking auth
+  if (sessionLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-green-50 dark:from-emerald-950 dark:via-teal-950 dark:to-green-950">
+        <div className="container mx-auto p-6 space-y-6">
+          <Skeleton className="h-8 w-64" />
+          <Card className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-emerald-200 dark:border-emerald-800">
+            <CardHeader>
+              <Skeleton className="h-6 w-48" />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} className="h-16 w-full" />
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading while fetching tickets
+  if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-green-50 dark:from-emerald-950 dark:via-teal-950 dark:to-green-950">
         <div className="container mx-auto p-6 space-y-6">
@@ -446,7 +588,7 @@ export default function TicketsPage() {
             </div>
             <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-emerald-700 to-teal-700 bg-clip-text text-transparent">Support Tickets</h1>
             <p className="text-gray-600 dark:text-gray-400">
-              {isAdminOrTeknisi ? "Kelola dan pantau semua tiket support" : "Buat dan pantau tiket support Anda"}
+              {isSuperAdmin ? "Kelola dan pantau semua tiket support" : "Buat dan pantau tiket support Anda"}
             </p>
           </div>
 
@@ -580,11 +722,132 @@ export default function TicketsPage() {
           </Dialog>
         </div>
 
+        {/* Stat Cards - Clickable untuk filter */}
+        <div className="grid gap-4 md:grid-cols-4">
+          {/* Total Tiket */}
+          <Card 
+            className={`cursor-pointer hover:shadow-lg transition-all duration-300 border-emerald-200 dark:border-emerald-800 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md hover:scale-105 ${
+              statusFilter === "all" && priorityFilter === "all" && categoryFilter === "all" 
+                ? "ring-2 ring-emerald-500 shadow-lg" 
+                : ""
+            }`}
+            onClick={() => {
+              setStatusFilter("all");
+              setPriorityFilter("all");
+              setCategoryFilter("all");
+            }}
+          >
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                Total Tiket
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">
+                {tickets.length}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Semua tiket
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Tiket Aktif (Open + In Progress) */}
+          <Card 
+            className={`cursor-pointer hover:shadow-lg transition-all duration-300 border-amber-200 dark:border-amber-800 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md hover:scale-105 ${
+              statusFilter === "open" || statusFilter === "in_progress"
+                ? "ring-2 ring-amber-500 shadow-lg" 
+                : ""
+            }`}
+            onClick={() => {
+              // Toggle between "all" and showing active tickets
+              if (statusFilter === "all") {
+                // Show only open tickets (user can manually add in_progress if needed)
+                setStatusFilter("open");
+              } else {
+                setStatusFilter("all");
+              }
+              setPriorityFilter("all");
+              setCategoryFilter("all");
+            }}
+          >
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                Tiket Aktif
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-amber-600 dark:text-amber-400">
+                {tickets.filter(t => t.status === 'open' || t.status === 'in_progress').length}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Open & In Progress
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Tiket Resolved */}
+          <Card 
+            className={`cursor-pointer hover:shadow-lg transition-all duration-300 border-green-200 dark:border-green-800 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md hover:scale-105 ${
+              statusFilter === "resolved"
+                ? "ring-2 ring-green-500 shadow-lg" 
+                : ""
+            }`}
+            onClick={() => {
+              setStatusFilter("resolved");
+              setPriorityFilter("all");
+              setCategoryFilter("all");
+            }}
+          >
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                Resolved
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-green-600 dark:text-green-400">
+                {tickets.filter(t => t.status === 'resolved').length}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Diselesaikan
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Tiket Urgent */}
+          <Card 
+            className={`cursor-pointer hover:shadow-lg transition-all duration-300 border-red-200 dark:border-red-800 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md hover:scale-105 ${
+              priorityFilter === "urgent"
+                ? "ring-2 ring-red-500 shadow-lg" 
+                : ""
+            }`}
+            onClick={() => {
+              setStatusFilter("all");
+              setPriorityFilter("urgent");
+              setCategoryFilter("all");
+            }}
+          >
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                Urgent
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-red-600 dark:text-red-400">
+                {tickets.filter(t => t.priority === 'urgent').length}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Prioritas tinggi
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
         <Card className="hover:shadow-xl transition-all duration-300 border-emerald-200 dark:border-emerald-800 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md">
           <CardHeader>
             <CardTitle className="text-emerald-900 dark:text-emerald-100">Daftar Tiket</CardTitle>
             <CardDescription className="text-gray-600 dark:text-gray-400">
-              {isAdminOrTeknisi 
+              {isSuperAdmin 
                 ? `Total ${filteredTickets.length} tiket dari ${tickets.length} tiket`
                 : `Anda memiliki ${filteredTickets.length} tiket`
               }
@@ -685,7 +948,7 @@ export default function TicketsPage() {
                         <TableCell>{formatDate(ticket.createdAt)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex gap-2 justify-end">
-                            {isAdminOrTeknisi && (
+                            {canEditTicket(ticket) && (
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -717,8 +980,8 @@ export default function TicketsPage() {
           </CardContent>
         </Card>
 
-        {/* Edit Ticket Dialog - Only for admin/teknisi */}
-        {isAdminOrTeknisi && (
+        {/* Edit Ticket Dialog - Only for owners and superadmin */}
+        {selectedTicket && canEditTicket(selectedTicket) && (
           <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-emerald-200 dark:border-emerald-800">
               <DialogHeader>
@@ -793,25 +1056,29 @@ export default function TicketsPage() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="edit-assignedTo">Assigned To</Label>
-                  <Select
-                    value={editFormData.assignedTo}
-                    onValueChange={(value) => setEditFormData({ ...editFormData, assignedTo: value })}
-                  >
-                    <SelectTrigger id="edit-assignedTo" className="border-emerald-200 dark:border-emerald-800">
-                      <SelectValue placeholder="Pilih teknisi" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="unassigned">Belum ditugaskan</SelectItem>
-                      {users.map((user) => (
-                        <SelectItem key={user.id} value={user.id}>
-                          {user.name} ({user.role})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {/* Assigned To - For superadmin and teknisi */}
+                {(currentUser?.role === 'superadmin' || currentUser?.role === 'teknisi') && (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-assignedTo">Assigned To</Label>
+                    <Select
+                      value={editFormData.assignedTo}
+                      onValueChange={(value) => setEditFormData({ ...editFormData, assignedTo: value })}
+                    >
+                      <SelectTrigger id="edit-assignedTo" className="border-emerald-200 dark:border-emerald-800">
+                        <SelectValue placeholder="Pilih user" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unassigned">Belum ditugaskan</SelectItem>
+                        {users.map((u) => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.name} ({u.email}) — {u.role}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500">{users.length} user tersedia (Superadmin + Teknisi)</p>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -911,11 +1178,11 @@ export default function TicketsPage() {
                   </div>
                 </div>
 
-                {isAdminOrTeknisi && (
+                {(currentUser?.role === 'superadmin' || currentUser?.role === 'teknisi') && (
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Assigned To</Label>
-                      <p className="text-sm">{selectedTicket.assignedTo || "Belum ditugaskan"}</p>
+                      <p className="text-sm">{getUserNameById(selectedTicket.assignedTo)}</p>
                     </div>
                     <div className="space-y-2">
                       <Label>Status</Label>
@@ -955,15 +1222,70 @@ export default function TicketsPage() {
                   </div>
                 )}
 
+                {selectedTicket.resolution && (
+                  <div className="space-y-2 border-t pt-4">
+                    <Label className="text-base font-semibold flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-emerald-500" />
+                      Cara Penyelesaian (Pembelajaran)
+                    </Label>
+                    <div className="bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 rounded-lg p-4">
+                      <p className="text-sm whitespace-pre-wrap text-emerald-900 dark:text-emerald-100">
+                        {selectedTicket.resolution}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 <DialogFooter>
-                  {isAdminOrTeknisi && (
-                    <Button
-                      variant="destructive"
-                      onClick={() => handleDeleteTicket(selectedTicket.id)}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Hapus Tiket
-                    </Button>
+                  {/* Action buttons for Superadmin and Teknisi */}
+                  {selectedTicket && canEditTicket(selectedTicket) && (
+                    <div className="flex gap-2 flex-wrap w-full">
+                      {/* Update Status */}
+                      {selectedTicket.status !== 'resolved' && selectedTicket.status !== 'closed' && (
+                        <>
+                          {selectedTicket.status === 'open' && (
+                            <Button
+                              variant="outline"
+                              className="bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-300"
+                              onClick={() => handleUpdateStatus(selectedTicket.id, 'in_progress')}
+                            >
+                              🔧 Mulai Progress
+                            </Button>
+                          )}
+                          {selectedTicket.status === 'in_progress' && (
+                            <Button
+                              variant="outline"
+                              className="bg-green-50 hover:bg-green-100 text-green-700 border-green-300"
+                              onClick={() => {
+                                setIsViewDialogOpen(false);
+                                setIsResolveDialogOpen(true);
+                              }}
+                            >
+                              ✅ Resolve Ticket
+                            </Button>
+                          )}
+                        </>
+                      )}
+                      
+                      {/* Edit & Delete */}
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setIsViewDialogOpen(false);
+                          setIsEditDialogOpen(true);
+                        }}
+                      >
+                        <Edit className="mr-2 h-4 w-4" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={() => handleDeleteTicket(selectedTicket.id)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Hapus
+                      </Button>
+                    </div>
                   )}
                   <Button variant="outline" onClick={() => setIsViewDialogOpen(false)}>
                     Tutup
@@ -974,6 +1296,86 @@ export default function TicketsPage() {
           </DialogContent>
         </Dialog>
       </div>
+        {/* Resolve Ticket Dialog - Input cara penyelesaian */}
+        <Dialog open={isResolveDialogOpen} onOpenChange={setIsResolveDialogOpen}>
+          <DialogContent className="max-w-2xl bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl border-emerald-200 dark:border-emerald-800">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-emerald-500" />
+                Selesaikan Tiket #{selectedTicket?.id}
+              </DialogTitle>
+              <DialogDescription>
+                Dokumentasikan cara penyelesaian untuk pembelajaran team IT
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <h4 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">
+                  💡 Tips Dokumentasi yang Baik:
+                </h4>
+                <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
+                  <li>• Jelaskan langkah-langkah yang dilakukan</li>
+                  <li>• Sebutkan tools atau software yang digunakan</li>
+                  <li>• Catat konfigurasi atau setting yang diubah</li>
+                  <li>• Tambahkan tips pencegahan masalah serupa</li>
+                </ul>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="resolution" className="text-base">
+                  Cara Penyelesaian * 
+                  <span className="text-sm font-normal text-muted-foreground ml-2">
+                    (Wajib diisi)
+                  </span>
+                </Label>
+                <Textarea
+                  id="resolution"
+                  placeholder="Contoh:&#10;&#10;1. Cek koneksi kabel network ke switch&#10;2. Restart network adapter di Device Manager&#10;3. Renew IP dengan command: ipconfig /renew&#10;4. Test ping ke gateway (192.168.1.1) - berhasil&#10;5. Clear DNS cache: ipconfig /flushdns&#10;&#10;Masalah resolved. User bisa akses internet kembali.&#10;&#10;Catatan: Pastikan Windows Firewall tidak blocking network."
+                  value={resolution}
+                  onChange={(e) => setResolution(e.target.value)}
+                  rows={12}
+                  className="font-mono text-sm"
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  {resolution.length} karakter • Min 20 karakter untuk dokumentasi yang baik
+                </p>
+              </div>
+
+              {selectedTicket && (
+                <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-1">
+                  <p><strong>Tiket:</strong> {selectedTicket.title}</p>
+                  <p><strong>Kategori:</strong> {selectedTicket.category}</p>
+                  <p><strong>Pemohon:</strong> {selectedTicket.requesterName} ({selectedTicket.department})</p>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsResolveDialogOpen(false);
+                  setResolution("");
+                }}
+                disabled={isSubmitting}
+              >
+                Batal
+              </Button>
+              <Button
+                type="button"
+                onClick={handleResolveTicket}
+                disabled={isSubmitting || !resolution.trim()}
+                className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
+              >
+                {isSubmitting ? "Menyimpan..." : "Selesaikan & Simpan"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
     </div>
   );
 }

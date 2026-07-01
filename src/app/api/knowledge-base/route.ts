@@ -6,6 +6,17 @@ import { eq, like, and, or, desc } from 'drizzle-orm';
 const VALID_CATEGORIES = ['hardware', 'software', 'network', 'access', 'other'] as const;
 const MAX_TITLE_LENGTH = 255;
 
+// Helper function to serialize dates in articles
+function serializeArticle(article: any) {
+  if (!article) return article;
+  
+  return {
+    ...article,
+    createdAt: article.createdAt instanceof Date ? article.createdAt.toISOString() : article.createdAt,
+    updatedAt: article.updatedAt instanceof Date ? article.updatedAt.toISOString() : article.updatedAt,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -33,7 +44,7 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      return NextResponse.json(article[0], { status: 200 });
+      return NextResponse.json(serializeArticle(article[0]), { status: 200 });
     }
 
     // List articles with filters and pagination
@@ -80,12 +91,16 @@ export async function GET(request: NextRequest) {
       .orderBy(desc(knowledgeBase.createdAt))
       .limit(limit)
       .offset(offset);
-
-    return NextResponse.json(articles, { status: 200 });
+    
+    return NextResponse.json(articles.map(serializeArticle), { status: 200 });
   } catch (error) {
-    console.error('GET error:', error);
+    console.error('GET /api/knowledge-base error:', error instanceof Error ? error.message : String(error));
+    
     return NextResponse.json(
-      { error: 'Internal server error: ' + (error as Error).message },
+      { 
+        error: 'Internal server error: ' + (error instanceof Error ? error.message : String(error)),
+        code: 'INTERNAL_ERROR'
+      },
       { status: 500 }
     );
   }
@@ -147,6 +162,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Log if content has images
+    const hasImages = content.includes('<img');
+    const hasBase64Images = content.includes('data:image');
+    if (hasImages) {
+      console.log('Article content contains images:', {
+        hasImgTags: hasImages,
+        hasBase64: hasBase64Images,
+        contentLength: content.length,
+        imageCount: (content.match(/<img/g) || []).length
+      });
+    }
+
     // Validate tags if provided
     if (tags !== undefined && tags !== null && typeof tags !== 'string') {
       return NextResponse.json(
@@ -161,8 +188,11 @@ export async function POST(request: NextRequest) {
       if (typeof attachments === 'string') {
         // If string, validate it's valid JSON
         try {
-          JSON.parse(attachments);
-          attachmentsValue = attachments;
+          const parsed = JSON.parse(attachments);
+          // Only store if it's a non-empty array
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            attachmentsValue = attachments;
+          }
         } catch (e) {
           return NextResponse.json(
             { error: 'Attachments must be valid JSON string', code: 'INVALID_ATTACHMENTS_JSON' },
@@ -170,8 +200,17 @@ export async function POST(request: NextRequest) {
           );
         }
       } else if (Array.isArray(attachments)) {
-        // If array, convert to JSON string
-        attachmentsValue = JSON.stringify(attachments);
+        // If array, convert to JSON string only if not empty
+        if (attachments.length > 0) {
+          try {
+            attachmentsValue = JSON.stringify(attachments);
+          } catch (e) {
+            return NextResponse.json(
+              { error: 'Failed to process attachments', code: 'ATTACHMENT_PROCESSING_ERROR' },
+              { status: 400 }
+            );
+          }
+        }
       } else {
         return NextResponse.json(
           { error: 'Attachments must be a JSON string or array', code: 'INVALID_ATTACHMENTS' },
@@ -180,8 +219,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const now = new Date().toISOString();
-    const newArticle = await db
+    const result = await db
       .insert(knowledgeBase)
       .values({
         title: trimmedTitle,
@@ -190,16 +228,59 @@ export async function POST(request: NextRequest) {
         tags: tags ? tags.trim() : null,
         author: author.trim(),
         attachments: attachmentsValue,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
+      });
 
-    return NextResponse.json(newArticle[0], { status: 201 });
+    // MySQL doesn't support .returning(), so we need to fetch the inserted record
+    let insertId: number | undefined;
+    
+    if (result.insertId) {
+      insertId = Number(result.insertId);
+    } else if ((result as any).lastInsertRowid) {
+      insertId = Number((result as any).lastInsertRowid);
+    } else if (Array.isArray(result) && result[0]?.insertId) {
+      insertId = Number(result[0].insertId);
+    }
+    
+    if (!insertId || isNaN(insertId)) {
+      // Fallback: query for the last inserted record
+      const lastArticle = await db
+        .select()
+        .from(knowledgeBase)
+        .orderBy(desc(knowledgeBase.id))
+        .limit(1);
+        
+      if (lastArticle && lastArticle.length > 0) {
+        return NextResponse.json(serializeArticle(lastArticle[0]), { status: 201 });
+      }
+      
+      return NextResponse.json(
+        { error: 'Failed to get insert ID or retrieve inserted article', code: 'INSERT_ID_ERROR' },
+        { status: 500 }
+      );
+    }
+    
+    const newArticle = await db
+      .select()
+      .from(knowledgeBase)
+      .where(eq(knowledgeBase.id, insertId))
+      .limit(1);
+
+    if (!newArticle || newArticle.length === 0) {
+      return NextResponse.json(
+        { error: `Failed to retrieve inserted article with ID ${insertId}`, code: 'FETCH_ERROR' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(serializeArticle(newArticle[0]), { status: 201 });
   } catch (error) {
-    console.error('POST error:', error);
+    console.error('POST /api/knowledge-base error:', error instanceof Error ? error.message : String(error));
+    
     return NextResponse.json(
-      { error: 'Internal server error: ' + (error as Error).message },
+      { 
+        error: 'Internal server error: ' + (error instanceof Error ? error.message : String(error)),
+        code: 'INTERNAL_ERROR'
+      },
       { status: 500 }
     );
   }
@@ -236,9 +317,7 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const { title, content, category, tags, author, attachments } = body;
 
-    const updates: any = {
-      updatedAt: new Date().toISOString(),
-    };
+    const updates: any = {};
 
     // Validate and add title if provided
     if (title !== undefined) {
@@ -330,7 +409,8 @@ export async function PUT(request: NextRequest) {
           );
         }
       } else if (Array.isArray(attachments)) {
-        updates.attachments = JSON.stringify(attachments);
+        // Convert array to JSON string and ensure it's not empty
+        updates.attachments = attachments.length > 0 ? JSON.stringify(attachments) : null;
       } else {
         return NextResponse.json(
           { error: 'Attachments must be a JSON string or array', code: 'INVALID_ATTACHMENTS' },
@@ -339,13 +419,19 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    const updated = await db
+    await db
       .update(knowledgeBase)
       .set(updates)
-      .where(eq(knowledgeBase.id, articleId))
-      .returning();
+      .where(eq(knowledgeBase.id, articleId));
 
-    return NextResponse.json(updated[0], { status: 200 });
+    // MySQL doesn't support .returning(), so we need to fetch the updated record
+    const updated = await db
+      .select()
+      .from(knowledgeBase)
+      .where(eq(knowledgeBase.id, articleId))
+      .limit(1);
+
+    return NextResponse.json(serializeArticle(updated[0]), { status: 200 });
   } catch (error) {
     console.error('PUT error:', error);
     return NextResponse.json(
@@ -383,15 +469,17 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const deleted = await db
+    // Fetch the record first before deleting
+    const articleToDelete = existing[0];
+
+    await db
       .delete(knowledgeBase)
-      .where(eq(knowledgeBase.id, articleId))
-      .returning();
+      .where(eq(knowledgeBase.id, articleId));
 
     return NextResponse.json(
       {
         message: 'Article deleted successfully',
-        article: deleted[0],
+        article: serializeArticle(articleToDelete),
       },
       { status: 200 }
     );

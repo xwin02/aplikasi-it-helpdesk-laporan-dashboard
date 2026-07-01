@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { tickets } from '@/db/schema';
 import { eq, and, or, like, desc, asc } from 'drizzle-orm';
-import { headers } from 'next/headers';
-import { auth } from '@/lib/auth';
+import { cookies } from 'next/headers';
+import { verifySession } from '@/lib/session';
 
 const VALID_STATUSES = ['open', 'in_progress', 'resolved', 'closed'];
 const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -12,18 +12,31 @@ const VALID_DEPARTMENTS = ['IT', 'Sales', 'PPIC', 'RND', 'ACC-Finance', 'Exim', 
 
 export async function GET(request: NextRequest) {
   try {
-    // Get session from bearer token
-    const session = await auth.api.getSession({ headers: await headers() });
+    // Get session from cookies and verify
+    const cookieStore = await cookies();
+    const sessionCookie = cookieStore.get('session')?.value;
 
-    if (!session?.user) {
+    if (!sessionCookie) {
       return NextResponse.json(
-        { error: 'Unauthorized - Authentication required', code: 'UNAUTHORIZED' },
+        { error: 'Unauthorized', code: 'UNAUTHORIZED' },
         { status: 401 }
       );
     }
 
-    const { user } = session;
-    const userRole = user.role || 'user';
+    const user = await verifySession(sessionCookie);
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+
+    const userId = user.id;
+    const userRole = user.role;
+    const userEmail = user.email;
+
+    console.log('🔐 GET Tickets - User:', userEmail, 'Role:', userRole);
 
     const searchParams = request.nextUrl.searchParams;
     const id = searchParams.get('id');
@@ -39,15 +52,18 @@ export async function GET(request: NextRequest) {
 
       let query = db.select().from(tickets).where(eq(tickets.id, parseInt(id)));
 
-      // If user role, only allow seeing their own tickets
+      // Role-based filtering:
+      // - Users can only see their own tickets
+      // - Teknisi and Superadmin can see all tickets
       if (userRole === 'user') {
         query = db.select().from(tickets).where(
           and(
             eq(tickets.id, parseInt(id)),
-            eq(tickets.userId, user.id)
+            eq(tickets.userId, userId)
           )
         );
       }
+      // Teknisi and Superadmin can see all tickets
 
       const ticket = await query.limit(1);
 
@@ -121,11 +137,13 @@ export async function GET(request: NextRequest) {
     // Build filter conditions
     const conditions = [];
 
-    // Role-based filtering: users can only see their own tickets
+    // Role-based filtering: 
+    // - Users can only see their own tickets
+    // - Teknisi and Superadmin can see ALL tickets
     if (userRole === 'user') {
-      conditions.push(eq(tickets.userId, user.id));
+      conditions.push(eq(tickets.userId, userId));
     }
-    // Admin and teknisi can see all tickets (no additional condition needed)
+    // Teknisi and Superadmin can see all tickets (no filter needed)
 
     if (status) {
       conditions.push(eq(tickets.status, status));
@@ -177,15 +195,31 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Get session from bearer token
-    const session = await auth.api.getSession({ headers: await headers() });
+    // Get session from cookies and verify
+    const cookieStore = await cookies();
+    const sessionCookie = cookieStore.get('session')?.value;
 
-    if (!session?.user) {
+    if (!sessionCookie) {
       return NextResponse.json(
-        { error: 'Unauthorized - Authentication required', code: 'UNAUTHORIZED' },
+        { error: 'Unauthorized', code: 'UNAUTHORIZED' },
         { status: 401 }
       );
     }
+
+    const user = await verifySession(sessionCookie);
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+
+    const userId = user.id;
+    const userRole = user.role;
+    const userEmail = user.email;
+
+    console.log('🔐 POST Ticket - User:', userEmail, 'Role:', userRole);
 
     const body = await request.json();
     const { title, description, status, priority, category, requesterName, department, assignedTo } = body;
@@ -270,8 +304,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Prepare insert data with defaults and timestamps
-    const currentTimestamp = new Date().toISOString();
+    // Prepare insert data with defaults (let MySQL handle timestamps)
     const insertData = {
       title: title.trim(),
       description: description.trim(),
@@ -281,13 +314,25 @@ export async function POST(request: NextRequest) {
       requesterName: requesterName.trim(),
       department: department.trim(),
       assignedTo: assignedTo ? (typeof assignedTo === 'string' ? assignedTo.trim() : assignedTo) : null,
-      userId: session.user.id, // Automatically set from session
-      createdAt: currentTimestamp,
-      updatedAt: currentTimestamp,
-      resolvedAt: null,
+      userId: userId, // Use authenticated user ID
+      // Don't set timestamps - let MySQL defaults handle it
     };
 
-    const newTicket = await db.insert(tickets).values(insertData).returning();
+    const result = await db.insert(tickets).values(insertData);
+    
+    // MySQL doesn't support .returning(), fetch the inserted ticket
+    // Get the last inserted ID from result - convert BigInt to number safely
+    const insertId = typeof result.insertId === 'bigint' 
+      ? Number(result.insertId) 
+      : parseInt(String(result.insertId));
+    
+    console.log('Inserted ticket ID:', insertId);
+    
+    const newTicket = await db
+      .select()
+      .from(tickets)
+      .where(eq(tickets.id, insertId))
+      .limit(1);
 
     return NextResponse.json(newTicket[0], { status: 201 });
   } catch (error) {
@@ -378,9 +423,9 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Prepare update data
+    // Prepare update data (MySQL will auto-update updatedAt with onUpdateNow())
     const updateData: Record<string, any> = {
-      updatedAt: new Date().toISOString(),
+      // Don't manually set updatedAt - schema has .onUpdateNow()
     };
 
     if (title !== undefined) {
@@ -403,11 +448,17 @@ export async function PUT(request: NextRequest) {
       updateData.category = category ? (typeof category === 'string' ? category.trim() : category) : null;
     }
 
-    const updatedTicket = await db
+    await db
       .update(tickets)
       .set(updateData)
+      .where(eq(tickets.id, ticketId));
+
+    // MySQL doesn't support .returning(), fetch the updated ticket
+    const updatedTicket = await db
+      .select()
+      .from(tickets)
       .where(eq(tickets.id, ticketId))
-      .returning();
+      .limit(1);
 
     return NextResponse.json(updatedTicket[0], { status: 200 });
   } catch (error) {

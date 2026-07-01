@@ -1,209 +1,198 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { authClient, useSession } from "@/lib/auth-client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Loader2, LogIn, Home, Sparkles, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
-import Link from "next/link";
 import Image from "next/image";
-import { Loader2, Sparkles, Lock, Mail } from "lucide-react";
 
-function LoginForm() {
+export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const { data: session, isPending: sessionLoading, refetch } = useSession();
-  const [isLoading, setIsLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-    rememberMe: false,
-  });
-
-  useEffect(() => {
-    if (!sessionLoading && session?.user) {
-      // If already logged in, redirect based on role
-      const userRole = (session.user as any).role || "user";
-      if (userRole === "admin" || userRole === "teknisi") {
-        router.push("/dashboard");
-      } else {
-        router.push("/tickets");
-      }
-    }
-  }, [session, sessionLoading, router]);
-
-  useEffect(() => {
-    if (searchParams.get("registered") === "true") {
-      toast.success("Akun berhasil dibuat! Silakan login.");
-    }
-  }, [searchParams]);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    setLoading(true);
+    setError("");
 
     try {
-      const { data, error } = await authClient.signIn.email({
-        email: formData.email,
-        password: formData.password,
-        rememberMe: formData.rememberMe,
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          password,
+        }),
       });
 
-      if (error?.code) {
-        toast.error("Email atau password salah. Pastikan Anda sudah mendaftar dan coba lagi.");
-        setIsLoading(false);
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || "Login gagal. Periksa email dan password Anda.");
+        toast.error("Login gagal!");
         return;
       }
 
-      // Refetch session to update Navigation component
-      await refetch();
-
-      // Get user role from session data
-      const userRole = (data?.user as any)?.role || "user";
-
       toast.success("Login berhasil!");
-
-      // Use window.location for full page reload to ensure Navigation updates
-      if (userRole === "admin" || userRole === "teknisi") {
-        window.location.href = "/dashboard";
-      } else {
-        window.location.href = "/tickets";
-      }
-    } catch (error) {
-      toast.error("Terjadi kesalahan. Silakan coba lagi.");
-      setIsLoading(false);
+      
+      // Redirect to tickets
+      router.push("/tickets");
+      router.refresh();
+    } catch (err) {
+      console.error("Login error:", err);
+      setError("Terjadi kesalahan saat login. Silakan coba lagi.");
+      toast.error("Login gagal!");
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (sessionLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-green-600" />
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-green-50 dark:from-emerald-950 dark:via-teal-950 dark:to-green-950 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Decorative Background Elements */}
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-green-50 dark:from-emerald-950 dark:via-teal-950 dark:to-green-950 flex items-center justify-center p-4">
+      {/* Decorative Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-10 w-72 h-72 bg-emerald-300/20 rounded-full blur-3xl"></div>
         <div className="absolute bottom-20 right-10 w-96 h-96 bg-teal-300/20 rounded-full blur-3xl"></div>
-        <div className="absolute top-1/2 left-1/2 w-80 h-80 bg-green-300/10 rounded-full blur-3xl"></div>
       </div>
 
-      <Card className="w-full max-w-md relative z-10 border-emerald-200 dark:border-emerald-800 bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl shadow-2xl">
-        <CardHeader className="space-y-4">
-          <div className="flex justify-center">
-            <div className="bg-white dark:bg-gray-800 p-3 rounded-2xl shadow-lg ring-2 ring-emerald-200 dark:ring-emerald-800">
-              <Image 
-                src="https://slelguoygbfzlpylpxfs.supabase.co/storage/v1/render/image/public/document-uploads/logommg-1761793499870.png"
-                alt="PT Mamagreen Logo"
-                width={60}
-                height={60}
-                className="object-contain"
-              />
+      <div className="w-full max-w-md relative z-10">
+        {/* Logo */}
+        <div className="flex justify-center mb-6">
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-lg ring-2 ring-emerald-200 dark:ring-emerald-800">
+            <Image 
+              src="https://slelguoygbfzlpylpxfs.supabase.co/storage/v1/render/image/public/document-uploads/logommg-1761793499870.png"
+              alt="PT Mamagreen Logo"
+              width={60}
+              height={60}
+              className="object-contain"
+            />
+          </div>
+        </div>
+
+        <Card className="border-emerald-200 dark:border-emerald-800 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md shadow-2xl">
+          <CardHeader className="space-y-1">
+            <div className="flex justify-center mb-4">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-100 dark:bg-emerald-900/50 rounded-full">
+                <Sparkles className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">IT Helpdesk System</span>
+              </div>
             </div>
-          </div>
-          <div className="inline-flex items-center justify-center gap-2 px-3 py-1 bg-emerald-100 dark:bg-emerald-900/50 rounded-full mx-auto">
-            <Sparkles className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-            <span className="text-xs font-medium text-emerald-700 dark:text-emerald-300">Secure Access</span>
-          </div>
-          <CardTitle className="text-2xl text-center bg-gradient-to-r from-emerald-700 to-teal-700 bg-clip-text text-transparent">Login ke IT Helpdesk</CardTitle>
-          <CardDescription className="text-center text-gray-600 dark:text-gray-400">
-            Masukkan email dan password Anda untuk melanjutkan
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-gray-700 dark:text-gray-300">Email</Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+            <CardTitle className="text-3xl text-center bg-gradient-to-r from-emerald-700 to-teal-700 bg-clip-text text-transparent">
+              Login
+            </CardTitle>
+            <CardDescription className="text-center text-gray-600 dark:text-gray-400">
+              Masuk ke akun Anda untuk melanjutkan
+            </CardDescription>
+          </CardHeader>
+          <form onSubmit={handleSubmit}>
+            <CardContent className="space-y-4">
+              {error && (
+                <Alert variant="destructive" className="bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="nama@example.com"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="nama@perusahaan.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   required
-                  disabled={isLoading}
-                  className="pl-10 border-emerald-200 dark:border-emerald-800 focus:border-emerald-500 focus:ring-emerald-500"
+                  disabled={loading}
+                  className="border-emerald-200 dark:border-emerald-800 focus:border-emerald-500 focus:ring-emerald-500"
                 />
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-gray-700 dark:text-gray-300">Password</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  required
-                  disabled={isLoading}
-                  autoComplete="off"
-                  className="pl-10 border-emerald-200 dark:border-emerald-800 focus:border-emerald-500 focus:ring-emerald-500"
-                />
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    disabled={loading}
+                    className="border-emerald-200 dark:border-emerald-800 focus:border-emerald-500 focus:ring-emerald-500 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
               </div>
-            </div>
+            </CardContent>
+            <CardFooter className="flex flex-col space-y-4 pt-2">{/* Added pt-2 for spacing */}
+              <Button
+                type="submit"
+                className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-lg"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Memproses...
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="mr-2 h-4 w-4" />
+                    Login
+                  </>
+                )}
+              </Button>
 
-            <div className="flex items-center space-x-2">
-              <input
-                id="remember"
-                type="checkbox"
-                checked={formData.rememberMe}
-                onChange={(e) => setFormData({ ...formData, rememberMe: e.target.checked })}
-                disabled={isLoading}
-                className="rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500"
-              />
-              <Label htmlFor="remember" className="text-sm font-normal cursor-pointer text-gray-600 dark:text-gray-400">
-                Ingat saya
-              </Label>
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/30 transition-all hover:shadow-xl hover:shadow-emerald-500/40 hover:scale-105"
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Memproses...
-                </>
-              ) : (
-                "Login"
-              )}
-            </Button>
-
-            <div className="text-center text-sm text-gray-600 dark:text-gray-400">
-              Belum punya akun?{" "}
-              <Link href="/register" className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 font-medium">
-                Daftar di sini
-              </Link>
-            </div>
+              <div className="text-sm text-center space-y-2">
+                <p className="text-gray-600 dark:text-gray-400">
+                  Belum punya akun?{" "}
+                  <Link href="/register" className="text-emerald-600 hover:text-emerald-700 font-semibold">
+                    Register di sini
+                  </Link>
+                </p>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Lupa password?{" "}
+                  <Link href="/reset-password" className="text-amber-600 hover:text-amber-700 font-semibold">
+                    Reset password
+                  </Link>
+                </p>
+                <Link href="/">
+                  <Button variant="ghost" type="button" className="w-full text-gray-600 hover:text-emerald-600">
+                    <Home className="mr-2 h-4 w-4" />
+                    Kembali ke Beranda
+                  </Button>
+                </Link>
+              </div>
+            </CardFooter>
           </form>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
+        </Card>
 
-export default function LoginPage() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-green-600" />
+        <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-6">
+          © 2024 PT Mamagreen Indonesia
+        </p>
       </div>
-    }>
-      <LoginForm />
-    </Suspense>
+    </div>
   );
 }

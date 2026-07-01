@@ -1,189 +1,185 @@
-import { sqliteTable, integer, text } from 'drizzle-orm/sqlite-core';
+import { mysqlTable, int, varchar, text, longtext, boolean, timestamp } from 'drizzle-orm/mysql-core';
+import { sql } from 'drizzle-orm';
 
-export const tickets = sqliteTable('tickets', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  title: text('title').notNull(),
+export const tickets = mysqlTable('tickets', {
+  id: int('id').primaryKey().autoincrement(),
+  title: varchar('title', { length: 255 }).notNull(),
   description: text('description').notNull(),
-  status: text('status').notNull().default('open'),
-  priority: text('priority').notNull().default('medium'),
-  category: text('category').notNull(),
-  requesterName: text('requester_name').notNull(),
-  department: text('department').notNull(),
-  assignedTo: text('assigned_to'),
-  userId: text('user_id').references(() => user.id),
-  createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
-  resolvedAt: text('resolved_at'),
+  status: varchar('status', { length: 50 }).notNull().default('open'),
+  priority: varchar('priority', { length: 50 }).notNull().default('medium'),
+  category: varchar('category', { length: 100 }).notNull(),
+  requesterName: varchar('requester_name', { length: 255 }).notNull(),
+  department: varchar('department', { length: 255 }).notNull(),
+  assignedTo: varchar('assigned_to', { length: 255 }),
+  userId: varchar('user_id', { length: 255 }).references(() => user.id),
+  resolution: text('resolution'), // Solution/cara penyelesaian untuk pembelajaran
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow().onUpdateNow(),
+  resolvedAt: timestamp('resolved_at').default(sql`NULL`),
 });
 
-export const knowledgeBase = sqliteTable('knowledge_base', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  title: text('title').notNull(),
-  content: text('content').notNull(),
-  category: text('category').notNull(),
+export const knowledgeBase = mysqlTable('knowledge_base', {
+  id: int('id').primaryKey().autoincrement(),
+  title: varchar('title', { length: 255 }).notNull(),
+  content: longtext('content').notNull(), // Changed from text() to longtext() for storing articles with base64 images
+  category: varchar('category', { length: 100 }).notNull(),
   tags: text('tags'),
-  author: text('author').notNull(),
-  attachments: text('attachments'),
-  createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
+  author: varchar('author', { length: 255 }).notNull(),
+  attachments: longtext('attachments'), // LONGTEXT for large file attachments
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow().onUpdateNow(),
 });
 
 
 // Auth tables for better-auth
-export const user = sqliteTable("user", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: integer("email_verified", { mode: "boolean" })
-    .$defaultFn(() => false)
+export const user = mysqlTable("user", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  emailVerified: boolean("email_verified")
+    .default(false)
     .notNull(),
   image: text("image"),
-  role: text("role").notNull().default("user"),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .$defaultFn(() => new Date())
-    .notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
-    .$defaultFn(() => new Date())
-    .notNull(),
+  role: varchar("role", { length: 50 }).notNull().default("user"),
+  securityAnswer: varchar("security_answer", { length: 255 }), // Hashed security answer
+  createdAt: timestamp("created_at")
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at")
+    .notNull()
+    .defaultNow()
+    .onUpdateNow(),
 });
 
-export const session = sqliteTable("session", {
-  id: text("id").primaryKey(),
-  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
-  token: text("token").notNull().unique(),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
-  ipAddress: text("ip_address"),
+export const session = mysqlTable("session", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  expiresAt: timestamp("expires_at").notNull(),
+  token: varchar("token", { length: 255 }).notNull().unique(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
+  ipAddress: varchar("ip_address", { length: 100 }),
   userAgent: text("user_agent"),
-  userId: text("user_id")
+  userId: varchar("user_id", { length: 255 })
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
 });
 
-export const account = sqliteTable("account", {
-  id: text("id").primaryKey(),
-  accountId: text("account_id").notNull(),
-  providerId: text("provider_id").notNull(),
-  userId: text("user_id")
+export const account = mysqlTable("account", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  accountId: varchar("account_id", { length: 255 }).notNull(),
+  providerId: varchar("provider_id", { length: 255 }).notNull(),
+  userId: varchar("user_id", { length: 255 })
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
   accessToken: text("access_token"),
   refreshToken: text("refresh_token"),
   idToken: text("id_token"),
-  accessTokenExpiresAt: integer("access_token_expires_at", {
-    mode: "timestamp",
-  }),
-  refreshTokenExpiresAt: integer("refresh_token_expires_at", {
-    mode: "timestamp",
-  }),
+  accessTokenExpiresAt: timestamp("access_token_expires_at"),
+  refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
   scope: text("scope"),
   password: text("password"),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
 });
 
-export const verification = sqliteTable("verification", {
-  id: text("id").primaryKey(),
-  identifier: text("identifier").notNull(),
+export const verification = mysqlTable("verification", {
+  id: varchar("id", { length: 255 }).primaryKey(),
+  identifier: varchar("identifier", { length: 255 }).notNull(),
   value: text("value").notNull(),
-  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" }).$defaultFn(
-    () => new Date(),
-  ),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).$defaultFn(
-    () => new Date(),
-  ),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().onUpdateNow(),
 });
 
-export const projects = sqliteTable('projects', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  title: text('title').notNull(),
+export const projects = mysqlTable('projects', {
+  id: int('id').primaryKey().autoincrement(),
+  title: varchar('title', { length: 255 }).notNull(),
   description: text('description'),
-  status: text('status').notNull().default('backlog'),
-  priority: text('priority').notNull().default('medium'),
-  assignedTo: text('assigned_to').references(() => user.id),
-  createdBy: text('created_by').notNull().references(() => user.id),
-  dueDate: text('due_date'),
-  createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
+  status: varchar('status', { length: 50 }).notNull().default('backlog'),
+  priority: varchar('priority', { length: 50 }).notNull().default('medium'),
+  assignedTo: varchar('assigned_to', { length: 255 }).references(() => user.id),
+  createdBy: varchar('created_by', { length: 255 }).notNull().references(() => user.id),
+  dueDate: timestamp('due_date').default(sql`NULL`),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow().onUpdateNow(),
 });
 
-export const tasks = sqliteTable('tasks', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  title: text('title').notNull(),
+export const tasks = mysqlTable('tasks', {
+  id: int('id').primaryKey().autoincrement(),
+  projectId: int('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  title: varchar('title', { length: 255 }).notNull(),
   description: text('description'),
-  status: text('status').notNull().default('todo'),
-  priority: text('priority').notNull().default('medium'),
-  assignedTo: text('assigned_to').references(() => user.id),
-  createdBy: text('created_by').notNull().references(() => user.id),
-  startDate: text('start_date'),
-  dueDate: text('due_date'),
-  estimatedHours: integer('estimated_hours'),
-  actualHours: integer('actual_hours'),
-  progress: integer('progress').default(0),
-  order: integer('order').default(0),
-  createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
-  completedAt: text('completed_at'),
+  status: varchar('status', { length: 50 }).notNull().default('todo'),
+  priority: varchar('priority', { length: 50 }).notNull().default('medium'),
+  assignedTo: varchar('assigned_to', { length: 255 }).references(() => user.id),
+  createdBy: varchar('created_by', { length: 255 }).notNull().references(() => user.id),
+  startDate: timestamp('start_date').default(sql`NULL`),
+  dueDate: timestamp('due_date').default(sql`NULL`),
+  estimatedHours: int('estimated_hours'),
+  actualHours: int('actual_hours'),
+  progress: int('progress').default(0),
+  order: int('order').default(0),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow().onUpdateNow(),
+  completedAt: timestamp('completed_at').default(sql`NULL`),
 });
 
-export const subtasks = sqliteTable('subtasks', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
-  title: text('title').notNull(),
-  completed: integer('completed', { mode: 'boolean' }).default(false),
-  order: integer('order').default(0),
-  createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
+export const subtasks = mysqlTable('subtasks', {
+  id: int('id').primaryKey().autoincrement(),
+  taskId: int('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  title: varchar('title', { length: 255 }).notNull(),
+  completed: boolean('completed').default(false),
+  order: int('order').default(0),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow().onUpdateNow(),
 });
 
-export const taskComments = sqliteTable('task_comments', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
-  userId: text('user_id').notNull().references(() => user.id),
+export const taskComments = mysqlTable('task_comments', {
+  id: int('id').primaryKey().autoincrement(),
+  taskId: int('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  userId: varchar('user_id', { length: 255 }).notNull().references(() => user.id),
   content: text('content').notNull(),
-  createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow().onUpdateNow(),
 });
 
-export const taskAttachments = sqliteTable('task_attachments', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
-  fileName: text('file_name').notNull(),
+export const taskAttachments = mysqlTable('task_attachments', {
+  id: int('id').primaryKey().autoincrement(),
+  taskId: int('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  fileName: varchar('file_name', { length: 255 }).notNull(),
   fileUrl: text('file_url').notNull(),
-  fileSize: integer('file_size').notNull(),
-  fileType: text('file_type').notNull(),
-  uploadedBy: text('uploaded_by').notNull().references(() => user.id),
-  createdAt: text('created_at').notNull(),
+  fileSize: int('file_size').notNull(),
+  fileType: varchar('file_type', { length: 100 }).notNull(),
+  uploadedBy: varchar('uploaded_by', { length: 255 }).notNull().references(() => user.id),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
-export const taskActivities = sqliteTable('task_activities', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  taskId: integer('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
-  userId: text('user_id').notNull().references(() => user.id),
-  action: text('action').notNull(),
+export const taskActivities = mysqlTable('task_activities', {
+  id: int('id').primaryKey().autoincrement(),
+  taskId: int('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  userId: varchar('user_id', { length: 255 }).notNull().references(() => user.id),
+  action: varchar('action', { length: 255 }).notNull(),
   details: text('details'),
-  createdAt: text('created_at').notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
 });
 
-export const milestones = sqliteTable('milestones', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  title: text('title').notNull(),
+export const milestones = mysqlTable('milestones', {
+  id: int('id').primaryKey().autoincrement(),
+  projectId: int('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  title: varchar('title', { length: 255 }).notNull(),
   description: text('description'),
-  dueDate: text('due_date').notNull(),
-  completed: integer('completed', { mode: 'boolean' }).default(false),
-  order: integer('order').default(0),
-  createdAt: text('created_at').notNull(),
-  updatedAt: text('updated_at').notNull(),
-  completedAt: text('completed_at'),
+  dueDate: timestamp('due_date').notNull(),
+  completed: boolean('completed').default(false),
+  order: int('order').default(0),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow().onUpdateNow(),
+  completedAt: timestamp('completed_at').default(sql`NULL`),
 });
 
-export const projectMembers = sqliteTable('project_members', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  projectId: integer('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  userId: text('user_id').notNull().references(() => user.id),
-  role: text('role').notNull().default('member'),
-  joinedAt: text('joined_at').notNull(),
+export const projectMembers = mysqlTable('project_members', {
+  id: int('id').primaryKey().autoincrement(),
+  projectId: int('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  userId: varchar('user_id', { length: 255 }).notNull().references(() => user.id),
+  role: varchar('role', { length: 50 }).notNull().default('member'),
+  joinedAt: timestamp('joined_at').notNull().defaultNow(),
 });

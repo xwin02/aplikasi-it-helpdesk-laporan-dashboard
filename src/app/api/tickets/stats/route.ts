@@ -1,9 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { tickets } from '@/db/schema';
+import { cookies } from 'next/headers';
+import { verifySession } from '@/lib/session';
 
 export async function GET(request: NextRequest) {
   try {
+    // Get session from cookies and verify - superadmin only
+    const cookieStore = await cookies();
+    const sessionCookie = cookieStore.get('session')?.value;
+
+    if (!sessionCookie) {
+      return NextResponse.json(
+        { error: 'Unauthorized', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+
+    const user = await verifySession(sessionCookie);
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized', code: 'UNAUTHORIZED' },
+        { status: 401 }
+      );
+    }
+
+    // Allow superadmin and teknisi to access stats
+    if (user.role !== 'superadmin' && user.role !== 'teknisi') {
+      return NextResponse.json(
+        { error: 'Unauthorized', code: 'UNAUTHORIZED' },
+        { status: 403 }
+      );
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const month = searchParams.get('month');
     const year = searchParams.get('year');
@@ -32,6 +62,12 @@ export async function GET(request: NextRequest) {
 
     // Fetch all tickets from database
     let allTickets = await db.select().from(tickets);
+
+    // For teknisi: only show tickets assigned to them
+    if (user.role === 'teknisi') {
+      allTickets = allTickets.filter(ticket => ticket.assignedTo === user.id);
+    }
+    // Superadmin sees all tickets (no filter needed)
 
     // Apply date filtering if provided
     if (month || year) {

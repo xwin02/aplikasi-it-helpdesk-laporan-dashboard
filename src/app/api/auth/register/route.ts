@@ -1,132 +1,58 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/db';
-import { user } from '@/db/schema';
-import { eq } from 'drizzle-orm';
-import { auth } from '@/lib/auth';
+import { NextResponse } from 'next/server';
+import { createUser } from '@/lib/simple-auth';
+import { createSession, setSessionCookie } from '@/lib/session';
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, name, password, role } = body;
+    const { email, password, name, role, securityAnswer } = body;
 
-    // Validate all required fields are present
-    if (!email || !name || !password || !role) {
+    if (!email || !password || !name) {
       return NextResponse.json(
-        { 
-          error: 'All fields are required',
-          code: 'MISSING_REQUIRED_FIELDS'
-        },
+        { error: 'Email, password, and name are required' },
         { status: 400 }
       );
     }
 
-    // Validate fields are not empty strings
-    if (email.trim() === '' || name.trim() === '' || password.trim() === '' || role.trim() === '') {
-      return NextResponse.json(
-        { 
-          error: 'All fields are required',
-          code: 'EMPTY_FIELDS'
-        },
-        { status: 400 }
-      );
-    }
-
-    // Validate email format (basic check for @ symbol)
-    if (!email.includes('@')) {
-      return NextResponse.json(
-        { 
-          error: 'Invalid email format',
-          code: 'INVALID_EMAIL'
-        },
-        { status: 400 }
-      );
-    }
-
-    // Validate password length (minimum 8 characters)
     if (password.length < 8) {
       return NextResponse.json(
-        { 
-          error: 'Password must be at least 8 characters',
-          code: 'INVALID_PASSWORD_LENGTH'
-        },
+        { error: 'Password must be at least 8 characters' },
         { status: 400 }
       );
     }
 
-    // Validate role is one of the allowed values
-    const allowedRoles = ['user', 'teknisi', 'admin'];
-    if (!allowedRoles.includes(role)) {
+    if (!securityAnswer || securityAnswer.trim().length < 2) {
       return NextResponse.json(
-        { 
-          error: 'Role must be one of: user, teknisi, admin',
-          code: 'INVALID_ROLE'
-        },
+        { error: 'Security answer is required (minimum 2 characters)' },
         { status: 400 }
       );
     }
 
-    // Create user using better-auth signUp method
-    const signUpResult = await auth.api.signUpEmail({
-      body: {
-        email: email.toLowerCase().trim(),
-        password,
-        name: name.trim()
-      }
+    // Validate role (default to 'user' if not provided)
+    const userRole = role && ['user', 'teknisi'].includes(role) ? role : 'user';
+
+    // Create user with specified role (user or teknisi, not superadmin)
+    const result = await createUser(email, password, name, userRole, securityAnswer);
+
+    if (!result.success || !result.user) {
+      return NextResponse.json(
+        { error: result.error || 'Failed to create user' },
+        { status: 400 }
+      );
+    }
+
+    // Auto login after registration
+    const token = await createSession(result.user);
+    await setSessionCookie(token);
+
+    return NextResponse.json({
+      success: true,
+      user: result.user,
     });
-
-    // Check if signup was successful
-    if (!signUpResult) {
-      return NextResponse.json(
-        { 
-          error: 'Failed to create user',
-          code: 'SIGNUP_FAILED'
-        },
-        { status: 400 }
-      );
-    }
-
-    // Update the user role immediately after creation
-    await db.update(user)
-      .set({ 
-        role,
-        updatedAt: new Date()
-      })
-      .where(eq(user.email, email.toLowerCase().trim()));
-
-    // Return success response
+  } catch (error) {
+    console.error('Register error:', error);
     return NextResponse.json(
-      {
-        success: true,
-        message: 'User registered successfully',
-        user: {
-          email: email.toLowerCase().trim(),
-          name: name.trim(),
-          role
-        }
-      },
-      { status: 201 }
-    );
-
-  } catch (error: any) {
-    console.error('POST /api/register error:', error);
-
-    // Handle better-auth specific errors (like duplicate email)
-    if (error.message && error.message.includes('unique')) {
-      return NextResponse.json(
-        { 
-          error: 'Email already exists',
-          code: 'DUPLICATE_EMAIL'
-        },
-        { status: 400 }
-      );
-    }
-
-    // Handle other errors
-    return NextResponse.json(
-      { 
-        error: 'Internal server error: ' + error.message,
-        code: 'INTERNAL_ERROR'
-      },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }
