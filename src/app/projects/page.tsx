@@ -40,6 +40,7 @@ import {
   User,
   Filter,
   X,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -87,99 +88,136 @@ interface Project {
 }
 
 const STATUSES = [
-  { value: "todo", label: "To Do", icon: ListTodo, color: "bg-gray-500" },
-  { value: "in_progress", label: "In Progress", icon: PlayCircle, color: "bg-blue-500" },
-  { value: "in_review", label: "In Review", icon: AlertCircle, color: "bg-yellow-500" },
-  { value: "done", label: "Done", icon: CheckCircle2, color: "bg-green-500" },
+  { value: "todo", label: "To Do", icon: ListTodo, color: "bg-gray-500", ring: "ring-gray-300", badge: "bg-gray-100 text-gray-700" },
+  { value: "in_progress", label: "In Progress", icon: PlayCircle, color: "bg-blue-500", ring: "ring-blue-300", badge: "bg-blue-100 text-blue-700" },
+  { value: "in_review", label: "In Review", icon: AlertCircle, color: "bg-yellow-500", ring: "ring-yellow-300", badge: "bg-yellow-100 text-yellow-700" },
+  { value: "done", label: "Done", icon: CheckCircle2, color: "bg-green-500", ring: "ring-green-300", badge: "bg-green-100 text-green-700" },
 ];
 
 const PRIORITIES = [
-  { value: "low", label: "Low", color: "text-green-600" },
-  { value: "medium", label: "Medium", color: "text-yellow-600" },
-  { value: "high", label: "High", color: "text-orange-600" },
-  { value: "urgent", label: "Urgent", color: "text-red-600" },
+  { value: "low", label: "Low", color: "text-green-600", bg: "bg-green-50 border-green-300" },
+  { value: "medium", label: "Medium", color: "text-yellow-600", bg: "bg-yellow-50 border-yellow-300" },
+  { value: "high", label: "High", color: "text-orange-600", bg: "bg-orange-50 border-orange-300" },
+  { value: "urgent", label: "Urgent", color: "text-red-600", bg: "bg-red-50 border-red-300" },
 ];
 
-// Draggable Task Card Component
+function getPriorityColor(priority: string) {
+  switch (priority) {
+    case "urgent": return "#ef4444";
+    case "high":   return "#f97316";
+    case "medium": return "#eab308";
+    case "low":    return "#22c55e";
+    default:       return "#6b7280";
+  }
+}
+
+// ─── Draggable Task Card ──────────────────────────────────────────────────────
 function DraggableTaskCard({
   task,
   assignedName,
+  isSuperadmin,
   onClick,
+  onDelete,
 }: {
   task: Task;
   assignedName: string | null;
+  isSuperadmin: boolean;
   onClick: () => void;
+  onDelete: (e: React.MouseEvent) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id.toString(),
     data: { task },
   });
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case "urgent": return "#ef4444";
-      case "high":   return "#f97316";
-      case "medium": return "#eab308";
-      case "low":    return "#22c55e";
-      default:       return "#6b7280";
-    }
-  };
+  const priorityMeta = PRIORITIES.find((p) => p.value === task.priority);
+  const isOverdue =
+    task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "done";
 
   return (
     <Card
       ref={setNodeRef}
-      className="p-3 hover:shadow-lg transition-all mb-3 border-l-4"
-      onClick={() => { if (!isDragging) onClick(); }}
+      className={`relative group mb-3 border-l-4 hover:shadow-lg transition-all duration-200 cursor-grab active:cursor-grabbing ${
+        isDragging ? "opacity-40 scale-95" : "opacity-100"
+      }`}
       style={{
-        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
-        opacity: isDragging ? 0.5 : 1,
-        cursor: isDragging ? "grabbing" : "grab",
+        transform: transform
+          ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+          : undefined,
         borderLeftColor: getPriorityColor(task.priority),
       }}
+      onClick={() => { if (!isDragging) onClick(); }}
       {...listeners}
       {...attributes}
     >
-      <div className="space-y-2">
-        <div className="flex items-start justify-between gap-2">
-          <h4 className="font-medium text-sm line-clamp-2 flex-1">{task.title}</h4>
+      {/* Delete button – superadmin only, top-right, visible on hover */}
+      {isSuperadmin && (
+        <button
+          className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-600"
+          onClick={onDelete}
+          title="Delete task"
+          type="button"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
+
+      <div className="p-3 space-y-2">
+        {/* Title row */}
+        <div className="pr-6">
+          <h4 className="font-medium text-sm line-clamp-2 leading-snug">{task.title}</h4>
         </div>
+
+        {/* Description */}
         {task.description && (
-          <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-2">
-            {task.description}
-          </p>
+          <p className="text-xs text-gray-500 line-clamp-2">{task.description}</p>
         )}
-        <div className="flex items-center gap-2 text-xs flex-wrap">
-          <Badge variant="outline" className={`${PRIORITIES.find((p) => p.value === task.priority)?.color} border-current`}>
-            {task.priority}
-          </Badge>
+
+        {/* Priority badge + due date */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span
+            className={`inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded border ${priorityMeta?.bg} ${priorityMeta?.color}`}
+          >
+            {task.priority.toUpperCase()}
+          </span>
           {task.dueDate && (
-            <div className="flex items-center gap-1 text-gray-500">
+            <span
+              className={`inline-flex items-center gap-1 text-[10px] ${
+                isOverdue ? "text-red-500 font-semibold" : "text-gray-400"
+              }`}
+            >
               <Calendar className="h-3 w-3" />
               {new Date(task.dueDate).toLocaleDateString()}
-            </div>
+            </span>
           )}
           {task.estimatedHours && (
-            <div className="flex items-center gap-1 text-gray-500">
+            <span className="inline-flex items-center gap-1 text-[10px] text-gray-400">
               <Clock className="h-3 w-3" />
               {task.estimatedHours}h
-            </div>
+            </span>
           )}
         </div>
-        {/* Assigned to badge */}
+
+        {/* Assigned to */}
         {assignedName && (
-          <div className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 rounded px-1.5 py-0.5 w-fit">
-            <span className="w-4 h-4 rounded-full bg-blue-200 dark:bg-blue-800 flex items-center justify-center text-[10px] font-bold text-blue-700 dark:text-blue-300">
+          <div className="flex items-center gap-1.5 text-xs text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 rounded-full px-2 py-0.5 w-fit">
+            <span className="w-4 h-4 rounded-full bg-blue-200 dark:bg-blue-800 flex items-center justify-center text-[10px] font-bold text-blue-700 dark:text-blue-300 shrink-0">
               {assignedName.charAt(0).toUpperCase()}
             </span>
-            <span className="truncate max-w-[120px]">{assignedName}</span>
+            <span className="truncate max-w-[110px]">{assignedName}</span>
           </div>
         )}
+
+        {/* Progress bar */}
         {task.progress > 0 && (
-          <div className="w-full bg-gray-200 rounded-full h-1.5">
-            <div
-              className="bg-emerald-600 h-1.5 rounded-full transition-all"
-              style={{ width: `${task.progress}%` }}
-            />
+          <div className="space-y-0.5">
+            <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+              <div
+                className="bg-emerald-500 h-1.5 rounded-full transition-all duration-300"
+                style={{ width: `${task.progress}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-gray-400 text-right">{task.progress}%</p>
           </div>
         )}
       </div>
@@ -187,38 +225,53 @@ function DraggableTaskCard({
   );
 }
 
-// Droppable Column Component
+// ─── Droppable Column ─────────────────────────────────────────────────────────
 function DroppableColumn({
   status,
+  taskCount,
   children,
 }: {
   status: typeof STATUSES[0];
+  taskCount: number;
   children: React.ReactNode;
 }) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: status.value,
-  });
-
+  const { setNodeRef, isOver } = useDroppable({ id: status.value });
   const StatusIcon = status.icon;
 
   return (
     <Card
       ref={setNodeRef}
-      className={`border-emerald-200 dark:border-emerald-800 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md transition-all ${
-        isOver ? "ring-2 ring-emerald-500 bg-emerald-50" : ""
+      className={`border-emerald-200 dark:border-emerald-800 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md transition-all duration-200 ${
+        isOver ? "ring-2 ring-emerald-500 bg-emerald-50/80 dark:bg-emerald-900/30 scale-[1.01]" : ""
       }`}
     >
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <StatusIcon className={`h-5 w-5 ${status.color} text-white rounded p-0.5`} />
-          {status.label}
+      <CardHeader className="pb-2 pt-4 px-4">
+        <CardTitle className="flex items-center justify-between text-sm font-semibold">
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex p-1 rounded ${status.color}`}>
+              <StatusIcon className="h-4 w-4 text-white" />
+            </span>
+            {status.label}
+          </div>
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${status.badge}`}>
+            {taskCount}
+          </span>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3 min-h-[500px]">{children}</CardContent>
+      <CardContent className="px-3 pb-3 min-h-[480px]">
+        {children}
+        {taskCount === 0 && (
+          <div className="mt-2 rounded-lg border-2 border-dashed border-gray-200 dark:border-gray-700 py-8 flex flex-col items-center justify-center text-gray-400 text-xs gap-1">
+            <Plus className="h-5 w-5 opacity-40" />
+            <span>Drop tasks here</span>
+          </div>
+        )}
+      </CardContent>
     </Card>
   );
 }
 
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ProjectsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -227,19 +280,38 @@ export default function ProjectsPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [teknisiList, setTeknisiList] = useState<any[]>([]);
   const [selectedProject, setSelectedProject] = useState<number | null>(null);
-  const [showProjectDialog, setShowProjectDialog] = useState(false);
-  const [showTaskDialog, setShowTaskDialog] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [showTaskDetail, setShowTaskDetail] = useState(false);
-  const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [filterAssignedTo, setFilterAssignedTo] = useState<string>("all");
 
+  // Dialogs
+  const [showProjectDialog, setShowProjectDialog] = useState(false);
+  const [showTaskDialog, setShowTaskDialog] = useState(false);
+  const [showEditProjectDialog, setShowEditProjectDialog] = useState(false);
+  const [showDeleteProjectDialog, setShowDeleteProjectDialog] = useState(false);
+
+  // Task detail
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [showTaskDetail, setShowTaskDetail] = useState(false);
+
+  // Drag overlay
+  const [activeTask, setActiveTask] = useState<Task | null>(null);
+
+  // New project form
   const [projectForm, setProjectForm] = useState({
     title: "",
     description: "",
     priority: "medium",
   });
 
+  // Edit project form
+  const [editProjectForm, setEditProjectForm] = useState({
+    title: "",
+    description: "",
+    priority: "medium",
+  });
+  const [editProjectSaving, setEditProjectSaving] = useState(false);
+  const [deletingProject, setDeletingProject] = useState(false);
+
+  // New task form
   const [taskForm, setTaskForm] = useState({
     title: "",
     description: "",
@@ -250,15 +322,11 @@ export default function ProjectsPage() {
     assignedTo: "",
   });
 
-  // Drag and drop sensors
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8, // 8px movement required to start drag
-      },
-    })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
 
+  // ── Auth ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     checkAuth();
   }, []);
@@ -268,7 +336,6 @@ export default function ProjectsPage() {
       const response = await fetch("/api/auth/session");
       if (response.ok) {
         const data = await response.json();
-        // Allow both superadmin and teknisi
         if (data.user.role !== "superadmin" && data.user.role !== "teknisi") {
           toast.error("Access denied. Superadmin or Teknisi only!");
           router.push("/");
@@ -286,10 +353,10 @@ export default function ProjectsPage() {
     }
   };
 
+  // ── Fetch helpers ─────────────────────────────────────────────────────────
   const fetchTeknisiList = async () => {
     try {
-      // Fetch all assignable users: superadmin + teknisi
-      const response = await fetch("/api/users", { credentials: 'include' });
+      const response = await fetch("/api/users", { credentials: "include" });
       if (response.ok) {
         const data = await response.json();
         setTeknisiList(data.users || []);
@@ -336,16 +403,15 @@ export default function ProjectsPage() {
     }
   }, [selectedProject]);
 
+  // ── Project CRUD ──────────────────────────────────────────────────────────
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
-
     try {
       const response = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(projectForm),
       });
-
       if (response.ok) {
         toast.success("Project created successfully!");
         setShowProjectDialog(false);
@@ -354,20 +420,75 @@ export default function ProjectsPage() {
       } else {
         toast.error("Failed to create project");
       }
-    } catch (error) {
-      console.error("Create project error:", error);
+    } catch {
       toast.error("An error occurred");
     }
   };
 
+  const openEditProject = () => {
+    const proj = projects.find((p) => p.id === selectedProject);
+    if (!proj) return;
+    setEditProjectForm({
+      title: proj.title,
+      description: proj.description || "",
+      priority: proj.priority,
+    });
+    setShowEditProjectDialog(true);
+  };
+
+  const handleEditProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProject) return;
+    setEditProjectSaving(true);
+    try {
+      const response = await fetch(`/api/projects/${selectedProject}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editProjectForm),
+      });
+      if (response.ok) {
+        toast.success("Project updated!");
+        setShowEditProjectDialog(false);
+        await fetchProjects();
+      } else {
+        toast.error("Failed to update project");
+      }
+    } catch {
+      toast.error("An error occurred");
+    } finally {
+      setEditProjectSaving(false);
+    }
+  };
+
+  const handleDeleteProject = async () => {
+    if (!selectedProject) return;
+    setDeletingProject(true);
+    try {
+      const response = await fetch(`/api/projects/${selectedProject}`, {
+        method: "DELETE",
+      });
+      if (response.ok) {
+        toast.success("Project deleted!");
+        setShowDeleteProjectDialog(false);
+        setSelectedProject(null);
+        await fetchProjects();
+      } else {
+        toast.error("Failed to delete project");
+      }
+    } catch {
+      toast.error("An error occurred");
+    } finally {
+      setDeletingProject(false);
+    }
+  };
+
+  // ── Task CRUD ─────────────────────────────────────────────────────────────
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!selectedProject) {
       toast.error("Please select a project first");
       return;
     }
-
     try {
       const response = await fetch("/api/tasks", {
         method: "POST",
@@ -379,25 +500,15 @@ export default function ProjectsPage() {
           assignedTo: taskForm.assignedTo || null,
         }),
       });
-
       if (response.ok) {
         toast.success("Task created successfully!");
         setShowTaskDialog(false);
-        setTaskForm({
-          title: "",
-          description: "",
-          priority: "medium",
-          status: "todo",
-          dueDate: "",
-          estimatedHours: "",
-          assignedTo: "",
-        });
+        setTaskForm({ title: "", description: "", priority: "medium", status: "todo", dueDate: "", estimatedHours: "", assignedTo: "" });
         await fetchTasks(selectedProject);
       } else {
         toast.error("Failed to create task");
       }
-    } catch (error) {
-      console.error("Create task error:", error);
+    } catch {
       toast.error("An error occurred");
     }
   };
@@ -406,103 +517,78 @@ export default function ProjectsPage() {
     try {
       const task = tasks.find((t) => t.id === taskId);
       if (!task) return;
-
       const response = await fetch(`/api/tasks/${taskId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...task,
-          status: newStatus,
-        }),
+        body: JSON.stringify({ ...task, status: newStatus }),
       });
-
       if (response.ok) {
         toast.success("Task moved!");
-        if (selectedProject) {
-          await fetchTasks(selectedProject);
-        }
+        if (selectedProject) await fetchTasks(selectedProject);
       } else {
         toast.error("Failed to update task");
       }
-    } catch (error) {
-      console.error("Update task error:", error);
+    } catch {
       toast.error("An error occurred");
     }
   };
 
   const handleDeleteTask = async (taskId: number, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent opening modal
-    if (!confirm("Are you sure you want to delete this task?")) return;
-
+    e.stopPropagation();
+    if (!confirm("Delete this task?")) return;
     try {
-      const response = await fetch(`/api/tasks/${taskId}`, {
-        method: "DELETE",
-      });
-
+      const response = await fetch(`/api/tasks/${taskId}`, { method: "DELETE" });
       if (response.ok) {
-        toast.success("Task deleted successfully!");
-        if (selectedProject) {
-          await fetchTasks(selectedProject);
-        }
+        toast.success("Task deleted!");
+        if (selectedProject) await fetchTasks(selectedProject);
       } else {
         toast.error("Failed to delete task");
       }
-    } catch (error) {
-      console.error("Delete task error:", error);
+    } catch {
       toast.error("An error occurred");
     }
   };
 
-  const getTasksByStatus = (status: string) => {
-    return tasks.filter((task) => {
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const getTasksByStatus = (status: string) =>
+    tasks.filter((task) => {
       if (task.status !== status) return false;
       if (filterAssignedTo === "all") return true;
       if (filterAssignedTo === "unassigned") return !task.assignedTo;
       return task.assignedTo === filterAssignedTo;
     });
-  };
 
-  // Helper: get name for a user ID
   const getAssignedName = (userId: string | null): string | null => {
     if (!userId) return null;
     const u = teknisiList.find((t) => t.id === userId);
     return u ? u.name : null;
   };
 
-  // Drag and drop handlers
+  const currentProjectData = projects.find((p) => p.id === selectedProject);
+  const isSuperadmin = currentUser?.role === "superadmin";
+
+  // ── Drag handlers ─────────────────────────────────────────────────────────
   function handleDragStart(event: DragStartEvent) {
     const taskId = parseInt(event.active.id as string);
-    const task = tasks.find((t) => t.id === taskId);
-    setActiveTask(task || null);
+    setActiveTask(tasks.find((t) => t.id === taskId) || null);
   }
 
-  function handleDragOver(event: DragOverEvent) {
-    // Optional: Add visual feedback during drag over
-  }
+  function handleDragOver(_event: DragOverEvent) {}
 
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
-
     setActiveTask(null);
-
     if (!over) return;
-
     const taskId = parseInt(active.id as string);
     const newStatus = over.id as string;
-
-    // Check if status actually changed
     const task = tasks.find((t) => t.id === taskId);
     if (task && task.status !== newStatus) {
-      // Optimistically update UI
-      setTasks((prevTasks) =>
-        prevTasks.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
-      );
-
-      // Update on server
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)));
       await handleUpdateTaskStatus(taskId, newStatus);
     }
   }
 
+  // ── Loading skeleton ──────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-green-50 dark:from-emerald-950 dark:via-teal-950 dark:to-green-950">
@@ -518,15 +604,17 @@ export default function ProjectsPage() {
     );
   }
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-green-50 dark:from-emerald-950 dark:via-teal-950 dark:to-green-950">
+      {/* Background blobs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-emerald-300/20 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-20 right-10 w-96 h-96 bg-teal-300/20 rounded-full blur-3xl"></div>
+        <div className="absolute top-20 left-10 w-72 h-72 bg-emerald-300/20 rounded-full blur-3xl" />
+        <div className="absolute bottom-20 right-10 w-96 h-96 bg-teal-300/20 rounded-full blur-3xl" />
       </div>
 
       <div className="container mx-auto p-6 relative z-10">
-        {/* Header */}
+        {/* ── Page header ── */}
         <div className="mb-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-100 dark:bg-emerald-900/50 rounded-full mb-2">
             <Sparkles className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
@@ -540,11 +628,11 @@ export default function ProjectsPage() {
                 Kanban Board
               </h1>
               <p className="text-gray-600 dark:text-gray-400">
-                Drag & drop tasks between columns • Click to view details
+                Drag &amp; drop tasks between columns • Click to view details
               </p>
             </div>
             <div className="flex gap-2">
-              {currentUser?.role === "superadmin" && (
+              {isSuperadmin && (
                 <>
                   <Button
                     onClick={() => setShowProjectDialog(true)}
@@ -565,19 +653,50 @@ export default function ProjectsPage() {
               )}
               {currentUser?.role === "teknisi" && (
                 <div className="text-sm text-gray-600 dark:text-gray-400 bg-blue-50 dark:bg-blue-950/30 px-4 py-2 rounded-lg">
-                  <span className="font-semibold text-blue-700 dark:text-blue-400">Teknisi Mode:</span> View & edit tasks only
+                  <span className="font-semibold text-blue-700 dark:text-blue-400">Teknisi Mode:</span> View &amp; edit tasks only
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Project Selector + Assigned To Filter */}
+        {/* ── Project stats gradient header ── */}
+        {currentProjectData && (
+          <div className="mb-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 p-4 text-white shadow-md">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold leading-tight">{currentProjectData.title}</h2>
+                {currentProjectData.description && (
+                  <p className="text-emerald-100 text-xs mt-0.5 line-clamp-1">{currentProjectData.description}</p>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-3 text-xs">
+                {STATUSES.map((s) => {
+                  const count = tasks.filter((t) => t.status === s.value).length;
+                  return (
+                    <div key={s.value} className="flex items-center gap-1 bg-white/20 rounded-full px-3 py-1">
+                      <s.icon className="h-3.5 w-3.5" />
+                      <span>{s.label}:</span>
+                      <span className="font-bold">{count}</span>
+                    </div>
+                  );
+                })}
+                <div className="flex items-center gap-1 bg-white/30 rounded-full px-3 py-1 font-semibold">
+                  Total: {tasks.length}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Project selector + filter bar ── */}
         {projects.length > 0 && (
           <Card className="mb-6 border-emerald-200 dark:border-emerald-800">
             <CardContent className="p-4">
-              <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-wrap items-center gap-3">
                 <Label className="whitespace-nowrap">Project:</Label>
+
+                {/* Selector */}
                 <Select
                   value={selectedProject?.toString()}
                   onValueChange={(value) => {
@@ -597,14 +716,35 @@ export default function ProjectsPage() {
                   </SelectContent>
                 </Select>
 
-                {/* Assigned To Filter */}
-                <div className="flex items-center gap-2">
+                {/* Edit / Delete project buttons – superadmin only */}
+                {isSuperadmin && selectedProject && (
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-9 px-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                      onClick={openEditProject}
+                      title="Edit project"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-9 px-2 border-red-300 text-red-600 hover:bg-red-50"
+                      onClick={() => setShowDeleteProjectDialog(true)}
+                      title="Delete project"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
+
+                {/* Assigned To filter */}
+                <div className="flex items-center gap-2 ml-2">
                   <Filter className="h-4 w-4 text-gray-500" />
                   <Label className="whitespace-nowrap">Assigned To:</Label>
-                  <Select
-                    value={filterAssignedTo}
-                    onValueChange={setFilterAssignedTo}
-                  >
+                  <Select value={filterAssignedTo} onValueChange={setFilterAssignedTo}>
                     <SelectTrigger className="w-52">
                       <SelectValue />
                     </SelectTrigger>
@@ -630,18 +770,18 @@ export default function ProjectsPage() {
                   )}
                 </div>
 
+                {/* Task count summary */}
                 <div className="ml-auto flex items-center gap-2 text-sm text-gray-500">
                   {filterAssignedTo !== "all" && (
-                    <Badge variant="secondary" className="bg-blue-100 text-blue-700">
-                      Filter aktif
-                    </Badge>
+                    <Badge variant="secondary" className="bg-blue-100 text-blue-700">Filter aktif</Badge>
                   )}
                   <span>
-                    {tasks.filter(t =>
+                    {tasks.filter((t) =>
                       filterAssignedTo === "all" ? true :
                       filterAssignedTo === "unassigned" ? !t.assignedTo :
                       t.assignedTo === filterAssignedTo
-                    ).length} / {tasks.length} tasks
+                    ).length}{" "}
+                    / {tasks.length} tasks
                   </span>
                 </div>
               </div>
@@ -649,20 +789,22 @@ export default function ProjectsPage() {
           </Card>
         )}
 
-        {/* Kanban Board with Drag & Drop */}
+        {/* ── Kanban board ── */}
         {projects.length === 0 ? (
           <Card className="border-emerald-200 dark:border-emerald-800">
             <CardContent className="p-12 text-center">
               <FolderKanban className="h-16 w-16 mx-auto mb-4 text-gray-400" />
               <h3 className="text-xl font-semibold mb-2">No Projects Yet</h3>
               <p className="text-gray-600 mb-4">Create your first project to get started</p>
-              <Button
-                onClick={() => setShowProjectDialog(true)}
-                className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Create Project
-              </Button>
+              {isSuperadmin && (
+                <Button
+                  onClick={() => setShowProjectDialog(true)}
+                  className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Project
+                </Button>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -676,21 +818,19 @@ export default function ProjectsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {STATUSES.map((status) => {
                 const statusTasks = getTasksByStatus(status.value);
-
                 return (
-                  <DroppableColumn key={status.value} status={status}>
-                    <div className="mb-2 flex items-center justify-between">
-                      <Badge variant="secondary">{statusTasks.length} tasks</Badge>
-                    </div>
+                  <DroppableColumn key={status.value} status={status} taskCount={statusTasks.length}>
                     {statusTasks.map((task) => (
                       <DraggableTaskCard
                         key={task.id}
                         task={task}
                         assignedName={getAssignedName(task.assignedTo)}
+                        isSuperadmin={isSuperadmin}
                         onClick={() => {
                           setSelectedTask(task);
                           setShowTaskDetail(true);
                         }}
+                        onDelete={(e) => handleDeleteTask(task.id, e)}
                       />
                     ))}
                   </DroppableColumn>
@@ -698,19 +838,15 @@ export default function ProjectsPage() {
               })}
             </div>
 
-            {/* Drag Overlay */}
+            {/* Drag overlay */}
             <DragOverlay>
               {activeTask ? (
-                <Card className="p-3 border-l-4 opacity-90 rotate-3 shadow-2xl" style={{ 
-                  borderLeftColor: 
-                    activeTask.priority === "urgent" ? "#ef4444" :
-                    activeTask.priority === "high" ? "#f97316" :
-                    activeTask.priority === "medium" ? "#eab308" : "#22c55e"
-                }}>
+                <Card
+                  className="p-3 border-l-4 opacity-90 rotate-2 shadow-2xl"
+                  style={{ borderLeftColor: getPriorityColor(activeTask.priority) }}
+                >
                   <h4 className="font-medium text-sm">{activeTask.title}</h4>
-                  <Badge variant="outline" className="mt-2">
-                    {activeTask.priority}
-                  </Badge>
+                  <Badge variant="outline" className="mt-2 text-xs">{activeTask.priority}</Badge>
                 </Card>
               ) : null}
             </DragOverlay>
@@ -718,7 +854,11 @@ export default function ProjectsPage() {
         )}
       </div>
 
-      {/* Create Project Dialog */}
+      {/* ════════════════════════════════════════════════════════════════════
+          DIALOGS
+      ════════════════════════════════════════════════════════════════════ */}
+
+      {/* Create Project */}
       <Dialog open={showProjectDialog} onOpenChange={setShowProjectDialog}>
         <DialogContent>
           <DialogHeader>
@@ -746,28 +886,22 @@ export default function ProjectsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="project-priority">Priority</Label>
+                <Label>Priority</Label>
                 <Select
                   value={projectForm.priority}
                   onValueChange={(value) => setProjectForm({ ...projectForm, priority: value })}
                 >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {PRIORITIES.map((p) => (
-                      <SelectItem key={p.value} value={p.value}>
-                        {p.label}
-                      </SelectItem>
+                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowProjectDialog(false)}>
-                Cancel
-              </Button>
+              <Button type="button" variant="outline" onClick={() => setShowProjectDialog(false)}>Cancel</Button>
               <Button
                 type="submit"
                 className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
@@ -779,7 +913,88 @@ export default function ProjectsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Create Task Dialog */}
+      {/* Edit Project */}
+      <Dialog open={showEditProjectDialog} onOpenChange={setShowEditProjectDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Project</DialogTitle>
+            <DialogDescription>Update the project details</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditProject}>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-project-title">Title *</Label>
+                <Input
+                  id="edit-project-title"
+                  value={editProjectForm.title}
+                  onChange={(e) => setEditProjectForm({ ...editProjectForm, title: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-project-description">Description</Label>
+                <Textarea
+                  id="edit-project-description"
+                  value={editProjectForm.description}
+                  onChange={(e) => setEditProjectForm({ ...editProjectForm, description: e.target.value })}
+                  rows={3}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Priority</Label>
+                <Select
+                  value={editProjectForm.priority}
+                  onValueChange={(value) => setEditProjectForm({ ...editProjectForm, priority: value })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {PRIORITIES.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowEditProjectDialog(false)}>Cancel</Button>
+              <Button
+                type="submit"
+                disabled={editProjectSaving}
+                className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
+              >
+                {editProjectSaving ? "Saving..." : "Save Changes"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Project Confirm */}
+      <Dialog open={showDeleteProjectDialog} onOpenChange={setShowDeleteProjectDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Project</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete{" "}
+              <span className="font-semibold text-red-600">{currentProjectData?.title}</span>?
+              This action cannot be undone and will also remove all associated tasks.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowDeleteProjectDialog(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={deletingProject}
+              onClick={handleDeleteProject}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              {deletingProject ? "Deleting..." : "Delete Project"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Task */}
       <Dialog open={showTaskDialog} onOpenChange={setShowTaskDialog}>
         <DialogContent>
           <DialogHeader>
@@ -808,37 +1023,29 @@ export default function ProjectsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="task-priority">Priority</Label>
+                  <Label>Priority</Label>
                   <Select
                     value={taskForm.priority}
                     onValueChange={(value) => setTaskForm({ ...taskForm, priority: value })}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {PRIORITIES.map((p) => (
-                        <SelectItem key={p.value} value={p.value}>
-                          {p.label}
-                        </SelectItem>
+                        <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="task-status">Status</Label>
+                  <Label>Status</Label>
                   <Select
                     value={taskForm.status}
                     onValueChange={(value) => setTaskForm({ ...taskForm, status: value })}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {STATUSES.map((s) => (
-                        <SelectItem key={s.value} value={s.value}>
-                          {s.label}
-                        </SelectItem>
+                        <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -865,14 +1072,12 @@ export default function ProjectsPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="task-assignedTo">Assign To</Label>
+                <Label>Assign To</Label>
                 <Select
                   value={taskForm.assignedTo || "unassigned"}
                   onValueChange={(value) => setTaskForm({ ...taskForm, assignedTo: value === "unassigned" ? "" : value })}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select user (optional)" />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Select user (optional)" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="unassigned">Unassigned</SelectItem>
                     {teknisiList.map((tek) => (
@@ -886,9 +1091,7 @@ export default function ProjectsPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowTaskDialog(false)}>
-                Cancel
-              </Button>
+              <Button type="button" variant="outline" onClick={() => setShowTaskDialog(false)}>Cancel</Button>
               <Button
                 type="submit"
                 className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white"
@@ -909,9 +1112,7 @@ export default function ProjectsPage() {
           setSelectedTask(null);
         }}
         onUpdate={() => {
-          if (selectedProject) {
-            fetchTasks(selectedProject);
-          }
+          if (selectedProject) fetchTasks(selectedProject);
         }}
         statuses={STATUSES}
         priorities={PRIORITIES}
