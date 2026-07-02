@@ -4,6 +4,7 @@ import { verifySession } from '@/lib/session';
 import { db } from '@/db';
 import { tasks } from '@/db/schema';
 import { eq, desc } from 'drizzle-orm';
+import { sendTelegramNotification, formatDateWIB } from '@/lib/telegram';
 
 // GET all tasks (optionally filter by projectId)
 export async function GET(request: NextRequest) {
@@ -92,6 +93,26 @@ export async function POST(request: NextRequest) {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+
+    // Send Telegram notification (non-blocking)
+    const priorityEmoji: Record<string, string> = {
+      low: '🟢', medium: '🟡', high: '🟠', urgent: '🔴',
+    };
+    const statusEmoji: Record<string, string> = {
+      todo: '📋', in_progress: '🔧', in_review: '👀', done: '✅',
+    };
+    sendTelegramNotification(
+      `✅ <b>TASK BARU DIBUAT</b>\n\n` +
+      `📌 <b>Judul:</b> ${title}\n` +
+      `${priorityEmoji[priority || 'medium']} <b>Prioritas:</b> ${(priority || 'medium').toUpperCase()}\n` +
+      `${statusEmoji[status || 'todo']} <b>Status:</b> ${(status || 'todo').replace('_', ' ')}\n` +
+      `${assignedTo ? `👤 <b>Assigned To:</b> ${assignedTo}\n` : ''}` +
+      `${estimatedHours ? `⏱️ <b>Estimasi:</b> ${estimatedHours} jam\n` : ''}` +
+      `${dueDate ? `📅 <b>Due Date:</b> ${new Date(dueDate).toLocaleDateString('id-ID')}\n` : ''}` +
+      `🗂️ <b>Project ID:</b> #${projectId}\n` +
+      `👤 <b>Dibuat oleh:</b> ${session.email}\n` +
+      `🕐 <b>Waktu:</b> ${formatDateWIB()}`
+    );
 
     return NextResponse.json({
       success: true,

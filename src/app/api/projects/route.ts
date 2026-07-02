@@ -4,6 +4,7 @@ import { verifySession } from '@/lib/session';
 import { db } from '@/db';
 import { projects, tasks } from '@/db/schema';
 import { eq, desc } from 'drizzle-orm';
+import { sendTelegramNotification, formatDateWIB } from '@/lib/telegram';
 
 // GET all projects
 export async function GET(request: NextRequest) {
@@ -65,6 +66,19 @@ export async function POST(request: NextRequest) {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+
+    // Send Telegram notification (non-blocking)
+    const priorityEmoji: Record<string, string> = {
+      low: '🟢', medium: '🟡', high: '🟠', urgent: '🔴',
+    };
+    sendTelegramNotification(
+      `📁 <b>PROJECT BARU DIBUAT</b>\n\n` +
+      `📌 <b>Nama:</b> ${title}\n` +
+      `${priorityEmoji[priority || 'medium']} <b>Prioritas:</b> ${(priority || 'medium').toUpperCase()}\n` +
+      `${description ? `📝 <b>Deskripsi:</b> ${description}\n` : ''}` +
+      `👤 <b>Dibuat oleh:</b> ${session.email}\n` +
+      `🕐 <b>Waktu:</b> ${formatDateWIB()}`
+    );
 
     return NextResponse.json({
       success: true,

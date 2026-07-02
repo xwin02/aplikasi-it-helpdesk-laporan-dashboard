@@ -4,6 +4,7 @@ import { tickets } from '@/db/schema';
 import { eq, and, or, like, desc, asc } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import { verifySession } from '@/lib/session';
+import { sendTelegramNotification, formatDateWIB } from '@/lib/telegram';
 
 const VALID_STATUSES = ['open', 'in_progress', 'resolved', 'closed'];
 const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -333,6 +334,25 @@ export async function POST(request: NextRequest) {
       .from(tickets)
       .where(eq(tickets.id, insertId))
       .limit(1);
+
+    // Send Telegram notification (non-blocking)
+    const priorityEmoji: Record<string, string> = {
+      low: '🟢', medium: '🟡', high: '🟠', urgent: '🔴',
+    };
+    const categoryEmoji: Record<string, string> = {
+      hardware: '🖥️', software: '💻', network: '🌐', access: '🔑', other: '📋',
+    };
+    sendTelegramNotification(
+      `🎫 <b>TIKET BARU DIBUAT</b>\n\n` +
+      `📌 <b>Judul:</b> ${insertData.title}\n` +
+      `${priorityEmoji[insertData.priority] || '⚪'} <b>Prioritas:</b> ${insertData.priority.toUpperCase()}\n` +
+      `${categoryEmoji[insertData.category] || '📋'} <b>Kategori:</b> ${insertData.category}\n` +
+      `🏢 <b>Departemen:</b> ${insertData.department}\n` +
+      `👤 <b>Pemohon:</b> ${insertData.requesterName}\n` +
+      `📊 <b>Status:</b> ${insertData.status}\n` +
+      `🕐 <b>Waktu:</b> ${formatDateWIB()}\n` +
+      `🆔 <b>ID:</b> #${insertId}`
+    );
 
     return NextResponse.json(newTicket[0], { status: 201 });
   } catch (error) {
