@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { tickets } from '@/db/schema';
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import { verifySession } from '@/lib/session';
 
@@ -151,7 +151,7 @@ export async function PATCH(
         !existingTicket[0].resolvedAt
       ) {
         console.log('Setting resolvedAt for ticket', ticketId);
-        updates.resolvedAt = sql`NOW()`; // Use MySQL NOW() function
+        updates.resolvedAt = new Date(); // Set current timestamp
       }
     }
 
@@ -220,6 +220,11 @@ export async function PATCH(
     }
 
     // Don't manually set updatedAt - schema has .onUpdateNow()
+
+    // Guard: if nothing to update, just return current ticket
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json(existingTicket[0], { status: 200 });
+    }
 
     await db
       .update(tickets)
