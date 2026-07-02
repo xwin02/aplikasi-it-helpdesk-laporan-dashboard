@@ -218,7 +218,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-emerald-200 dark:border-emerald-800 bg-white/50 dark:bg-gray-900/50 backdrop-blur-xl">
         <div className="container mx-auto px-4 py-8 text-center text-gray-600 dark:text-gray-400">
-          <p>© 2024 PT Mamagreen Indonesia. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} PT Mamagreen Indonesia. All rights reserved.</p>
         </div>
       </footer>
     </div>

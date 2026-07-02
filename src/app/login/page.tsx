@@ -190,7 +190,7 @@ export default function LoginPage() {
         </Card>
 
         <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-6">
-          © 2024 PT Mamagreen Indonesia
+          © {new Date().getFullYear()} PT Mamagreen Indonesia
         </p>
       </div>
     </div>
