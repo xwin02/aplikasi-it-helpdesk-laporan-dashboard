@@ -321,13 +321,35 @@ export async function POST(request: NextRequest) {
 
     const result = await db.insert(tickets).values(insertData);
     
-    // MySQL doesn't support .returning(), fetch the inserted ticket
-    // Get the last inserted ID from result - convert BigInt to number safely
-    const insertId = typeof result.insertId === 'bigint' 
-      ? Number(result.insertId) 
-      : parseInt(String(result.insertId));
+    // Get the last inserted ID - handle different MySQL driver return formats
+    let insertId: number;
     
-    console.log('Inserted ticket ID:', insertId);
+    if (result && typeof (result as any).insertId !== 'undefined') {
+      const raw = (result as any).insertId;
+      insertId = typeof raw === 'bigint' ? Number(raw) : parseInt(String(raw));
+    } else if (Array.isArray(result) && result.length > 0) {
+      const raw = (result[0] as any).insertId;
+      insertId = typeof raw === 'bigint' ? Number(raw) : parseInt(String(raw));
+    } else {
+      // Fallback: query LAST_INSERT_ID() directly
+      const lastId = await db.execute('SELECT LAST_INSERT_ID() as id');
+      const rows = lastId as any;
+      if (Array.isArray(rows) && rows.length > 0) {
+        insertId = parseInt(String(rows[0].id ?? rows[0]['LAST_INSERT_ID()'] ?? 0));
+      } else {
+        insertId = 0;
+      }
+    }
+    
+    console.log('Inserted ticket ID:', insertId, '| raw result:', JSON.stringify(result));
+    
+    if (!insertId || isNaN(insertId)) {
+      console.error('❌ Failed to get insertId from result:', result);
+      return NextResponse.json(
+        { error: 'Ticket created but failed to retrieve ID', code: 'INSERT_ID_ERROR' },
+        { status: 500 }
+      );
+    }
     
     const newTicket = await db
       .select()
